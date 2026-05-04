@@ -1,0 +1,9 @@
+kind: gen-config
+data:
+  seed: 42
+  width: 256
+  height: 256
+  octaves: 6
+  lacunarity: 2.0
+  gain: 0.5
+  scale: 100.0

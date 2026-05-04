@@ -51,3 +51,17 @@ The system MUST have unit tests covering happy path and error cases for both int
 ### Requirement: Future Extensibility (Edge)
 
 The Store interface SHOULD remain minimal (Open, Close) to allow alternative backends (e.g., in-memory, Postgres) in future changes without breaking consumers.
+
+### Requirement: World Persistence
+
+Store MUST add SaveWorld(seed int64, w, h int) error and LoadLatestWorld() (seed int64, w, h int, error). SQLite stores in worlds table.
+
+#### Scenario: Save+retrieve
+- GIVEN opened store
+- WHEN SaveWorld(42,64,64) then LoadLatestWorld()
+- THEN seed=42, width=64, height=64
+
+#### Scenario: Empty store
+- GIVEN fresh store, no worlds
+- WHEN LoadLatestWorld()
+- THEN MUST return error
