@@ -1,0 +1,17 @@
+kind: biomes
+data:
+  - id: plains
+    name: Llanuras
+    temperature: 0.6
+    humidity: 0.5
+    color: "#90EE90"
+  - id: forest
+    name: Bosque
+    temperature: 0.5
+    humidity: 0.7
+    color: "#228B22"
+  - id: desert
+    name: Desierto
+    temperature: 0.9
+    humidity: 0.1
+    color: "#EDC9AF"

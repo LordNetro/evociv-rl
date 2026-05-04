@@ -1,0 +1,67 @@
+name: Feature Request
+description: Sugerir una idea o mejora para Evociv-RL
+title: "feat: "
+labels: ["enhancement", "status:needs-review"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+          ## ✨ Feature Request
+
+          Gracias por contribuir a Evociv-RL. Antes de crear el issue, asegúrate de:
+          - [ ] He buscado issues existentes y este no es un duplicado
+          - [ ] Entiendo que este issue necesita `status:approved` antes de abrir un PR
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema
+      description: ¿Qué problema resuelve esta feature? ¿Qué necesidad cubre?
+      placeholder: "Ej: Cuando juego, me gustaría ver un mapa del mundo en lugar de solo texto..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Solución Propuesta
+      description: ¿Cómo debería funcionar desde la perspectiva del usuario?
+      placeholder: "Ej: Una pantalla de mapa mundial navegable con teclas wasd..."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Área Afectada
+      description: ¿Qué parte del proyecto afecta?
+      options:
+        - World Generation
+        - ECS / Simulation
+        - NPC / GOAP / RL
+        - UI / TUI
+        - Data / Content
+        - LLM / Dialogue
+        - Store / Persistence
+        - Infrastructure
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativas Consideradas
+      description: Otras aproximaciones o workarounds que hayas considerado
+      placeholder: "Ej: Podría hacerse con una librería de mapas ASCII..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Contexto Adicional
+      description: Mockups, ejemplos, referencias a otros juegos
+    validations:
+      required: false
