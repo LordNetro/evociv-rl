@@ -6,4 +6,6 @@ type Store interface {
 	Close() error
 	Health() error
 	Path() string
+	SaveWorld(seed int64, width, height int) error
+	LoadLatestWorld() (seed int64, width, height int, err error)
 }

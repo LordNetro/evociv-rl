@@ -1,17 +1,62 @@
 kind: biomes
 data:
+  - id: ocean
+    name: Océano
+    symbol: "~"
+    color: "#1E90FF"
+    minHeight: -1.0
+    maxHeight: 0.1
+    minHumidity: 0.0
+    maxHumidity: 1.0
+    minTemperature: 0.0
+    maxTemperature: 1.0
   - id: plains
     name: Llanuras
-    temperature: 0.6
-    humidity: 0.5
+    symbol: "."
     color: "#90EE90"
+    minHeight: 0.1
+    maxHeight: 0.6
+    minHumidity: 0.2
+    maxHumidity: 0.7
+    minTemperature: 0.3
+    maxTemperature: 0.8
   - id: forest
     name: Bosque
-    temperature: 0.5
-    humidity: 0.7
+    symbol: "T"
     color: "#228B22"
+    minHeight: 0.1
+    maxHeight: 0.8
+    minHumidity: 0.5
+    maxHumidity: 1.0
+    minTemperature: 0.2
+    maxTemperature: 0.7
   - id: desert
     name: Desierto
-    temperature: 0.9
-    humidity: 0.1
+    symbol: "d"
     color: "#EDC9AF"
+    minHeight: 0.1
+    maxHeight: 0.7
+    minHumidity: 0.0
+    maxHumidity: 0.2
+    minTemperature: 0.6
+    maxTemperature: 1.0
+  - id: tundra
+    name: Tundra
+    symbol: "*"
+    color: "#E0FFFF"
+    minHeight: 0.1
+    maxHeight: 0.8
+    minHumidity: 0.0
+    maxHumidity: 0.5
+    minTemperature: 0.0
+    maxTemperature: 0.3
+  - id: jungle
+    name: Selva
+    symbol: "J"
+    color: "#006400"
+    minHeight: 0.2
+    maxHeight: 0.8
+    minHumidity: 0.7
+    maxHumidity: 1.0
+    minTemperature: 0.5
+    maxTemperature: 1.0
