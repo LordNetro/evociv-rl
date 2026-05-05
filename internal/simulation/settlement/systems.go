@@ -189,6 +189,47 @@ func buildingName(id string) string {
 	}
 }
 
+// PopulationSystem counts NPCs per settlement and updates Population.
+type PopulationSystem struct {
+	settlementID ecs.ComponentID
+}
+
+// NewPopulationSystem creates a population counting system.
+func NewPopulationSystem() *PopulationSystem {
+	return &PopulationSystem{
+		settlementID: SettlementID,
+	}
+}
+
+// Name returns the system name.
+func (s *PopulationSystem) Name() string { return "PopulationSystem" }
+
+// Update counts NPCs with HomeReference matching each settlement.
+func (s *PopulationSystem) Update(w *ecs.World, dt float64) error {
+	homeRefID := ecs.NewComponentID("home_reference")
+	homeStore, ok := w.GetStore(homeRefID).(*ecs.ComponentStore[HomeReference])
+	if !ok {
+		return nil
+	}
+	setStore, ok := w.GetStore(SettlementID).(*ecs.ComponentStore[Settlement])
+	if !ok {
+		return nil
+	}
+
+	// Count NPCs per settlement
+	counts := make(map[ecs.Entity]int)
+	for _, h := range homeStore.All() {
+		counts[h.SettlementEntity]++
+	}
+
+	// Update Population on each settlement
+	for e, set := range setStore.All() {
+		set.Population = counts[e]
+		setStore.Set(e, set)
+	}
+	return nil
+}
+
 // SettlementRenderSystem collects render information for settlements.
 type SettlementRenderSystem struct {
 	renderInfos []SettlementRenderInfo
@@ -217,12 +258,13 @@ func (s *SettlementRenderSystem) Update(w *ecs.World, dt float64) error {
 			continue
 		}
 		s.renderInfos = append(s.renderInfos, SettlementRenderInfo{
-			Entity: int(e),
-			Symbol: []rune(set.Symbol)[0],
-			Color:  set.Color,
-			Name:   set.Name,
-			WorldX: int(pos.X),
-			WorldY: int(pos.Y),
+			Entity:     int(e),
+			Symbol:     []rune(set.Symbol)[0],
+			Color:      set.Color,
+			Name:       set.Name,
+			WorldX:     int(pos.X),
+			WorldY:     int(pos.Y),
+			Population: set.Population,
 		})
 	}
 	return nil

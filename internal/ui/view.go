@@ -35,6 +35,11 @@ var (
 		Align(lipgloss.Center)
 )
 
+// cursorStyle highlights the cursor position with a gold background.
+var cursorStyle = lipgloss.NewStyle().
+	Background(lipgloss.Color("#FFD700")).
+	Foreground(lipgloss.Color("#000000"))
+
 // biomeStyles maps biome IDs to their display symbol and color.
 var biomeStyles = map[string]struct {
 	symbol string
@@ -172,20 +177,16 @@ func renderMap(m Model) string {
 
 			isCursor := worldX == m.cameraX+m.cursorX && worldY == m.cameraY+m.cursorY
 
-			overlay := renderOverlay(m, worldX, worldY)
-			if overlay != "" {
-				if isCursor {
-					// Show cursor around NPC overlay
-					overlay = lipgloss.NewStyle().Background(lipgloss.Color("#FFD700")).Render(string(overlay[0]))
-				}
-				line.WriteString(overlay)
+			styled := renderOverlay(m, worldX, worldY, isCursor)
+			if styled != "" {
+				line.WriteString(styled)
 				continue
 			}
 
 			tile := m.worldMap.TileAt(worldX, worldY)
 			if tile == nil {
 				if isCursor {
-					line.WriteString(lipgloss.NewStyle().Background(lipgloss.Color("#FFD700")).Render(" "))
+					line.WriteString(cursorStyle.Render(" "))
 				} else {
 					line.WriteString(" ")
 				}
@@ -196,21 +197,34 @@ func renderMap(m Model) string {
 			if !ok {
 				style = biomeStyles["unknown"]
 			}
-			styled := lipgloss.NewStyle().
-				Foreground(lipgloss.Color(style.color)).
-				Render(style.symbol)
 			if isCursor {
-				styled = lipgloss.NewStyle().
-					Foreground(lipgloss.Color("#000000")).
-					Background(lipgloss.Color("#FFD700")).
-					Render(style.symbol)
+				line.WriteString(cursorStyle.Render(style.symbol))
+			} else {
+				line.WriteString(lipgloss.NewStyle().
+					Foreground(lipgloss.Color(style.color)).
+					Render(style.symbol))
 			}
-			line.WriteString(styled)
 		}
 		lines = append(lines, line.String())
 	}
 
 	result := strings.Join(lines, "\n")
+
+	// Status bar: show settlement info if cursor is over one
+	if m.screen == "map" && !m.inspectorOpen {
+		wx := m.cameraX + m.cursorX
+		wy := m.cameraY + m.cursorY
+		for _, info := range m.settlementOverlay {
+			if info.WorldX == wx && info.WorldY == wy {
+				result += "\n" + lipgloss.NewStyle().
+					Background(lipgloss.Color("#333333")).
+					Foreground(lipgloss.Color(info.Color)).
+					Render(fmt.Sprintf(" %s %s | Pop: %d ", string(info.Symbol), info.Name, info.Population))
+				break
+			}
+		}
+	}
+
 	if m.inspectorOpen {
 		result += "\n" + renderInspector(m)
 	}
@@ -219,27 +233,35 @@ func renderMap(m Model) string {
 
 // renderOverlay returns the styled overlay symbol at the given world coordinate.
 // Priority: NPC > Settlement > Biome (empty string falls through to biome).
-func renderOverlay(m Model, worldX, worldY int) string {
+// If isCursor is true, wraps the symbol in cursor styling (gold background).
+func renderOverlay(m Model, worldX, worldY int, isCursor bool) string {
+	var symbol rune
+	var colorStr string
+
 	// 1. NPC overlay (highest priority)
 	for _, info := range m.npcOverlay {
 		if info.WorldX == worldX && info.WorldY == worldY {
-			return lipgloss.NewStyle().
-				Foreground(info.Color).
-				Render(string(info.Symbol))
+			symbol = info.Symbol
+			colorStr = string(info.Color)
+			goto render
 		}
 	}
 	// 2. Settlement overlay (middle priority)
 	for _, info := range m.settlementOverlay {
 		if info.WorldX == worldX && info.WorldY == worldY {
-			return styledSettlement(info)
+			symbol = info.Symbol
+			colorStr = info.Color
+			goto render
 		}
 	}
 	// 3. Biome tile (default — handled in renderMap)
 	return ""
+
+render:
+	if isCursor {
+		return cursorStyle.Render(string(symbol))
+	}
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(colorStr)).Render(string(symbol))
 }
 
-func styledSettlement(info settlement.SettlementRenderInfo) string {
-	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(info.Color)).
-		Render(string(info.Symbol))
-}
+

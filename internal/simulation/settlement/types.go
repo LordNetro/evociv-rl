@@ -25,6 +25,7 @@ type SettlementRenderInfo struct {
 	Color          string
 	Name           string
 	WorldX, WorldY int
+	Population     int
 }
 
 // Name pools for procedural settlement naming.

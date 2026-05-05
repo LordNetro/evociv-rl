@@ -129,6 +129,7 @@ func run() error {
 	if worldMap != nil {
 		setRenderSys = settlement.NewSettlementRenderSystem()
 		ecsWorld.AddSystem(settlement.NewSettlementSpawnSystem(worldMap, genConfig.Seed, settlementDefs, buildingDefs))
+		ecsWorld.AddSystem(settlement.NewPopulationSystem())
 		ecsWorld.AddSystem(setRenderSys)
 	}
 	if worldMap != nil && len(raceDefs) > 0 && len(roleDefs) > 0 {

@@ -198,7 +198,7 @@ func TestRenderOverlayWithNPC(t *testing.T) {
 		{WorldX: 1, WorldY: 1, Symbol: '@', Color: lipgloss.Color("#FF0000")},
 	}
 
-	overlay := renderOverlay(m, 1, 1)
+	overlay := renderOverlay(m, 1, 1, false)
 	if overlay == "" {
 		t.Error("expected non-empty overlay for tile with NPC")
 	}
@@ -206,7 +206,7 @@ func TestRenderOverlayWithNPC(t *testing.T) {
 		t.Error("expected overlay to contain '@'")
 	}
 
-	overlayEmpty := renderOverlay(m, 0, 0)
+	overlayEmpty := renderOverlay(m, 0, 0, false)
 	if overlayEmpty != "" {
 		t.Errorf("expected empty overlay for tile without NPC, got %q", overlayEmpty)
 	}
@@ -256,7 +256,7 @@ func TestRenderOverlayCameraOffset(t *testing.T) {
 	}
 
 	// With camera at (5,5), the NPC at world (5,5) should appear at screen (0,0)
-	overlay := renderOverlay(m, 5, 5)
+	overlay := renderOverlay(m, 5, 5, false)
 	if overlay == "" {
 		t.Error("expected overlay at world (5,5) with NPC")
 	}
@@ -326,13 +326,13 @@ func TestRenderOverlaySettlementPriority(t *testing.T) {
 		{WorldX: 1, WorldY: 1, Symbol: '♦', Color: "#8B7355", Name: "Village"},
 	}
 
-	overlay := renderOverlay(m, 1, 1)
+	overlay := renderOverlay(m, 1, 1, false)
 	if !strings.Contains(overlay, "@") {
 		t.Error("expected NPC overlay to take priority over settlement")
 	}
 
 	// Settlement-only tile
-	overlaySettle := renderOverlay(m, 0, 0)
+	overlaySettle := renderOverlay(m, 0, 0, false)
 	if overlaySettle != "" {
 		// no settlement at (0,0), should be empty
 	}
@@ -355,7 +355,7 @@ func TestRenderOverlaySettlementOnly(t *testing.T) {
 		{WorldX: 2, WorldY: 2, Symbol: '▲', Color: "#B8860B", Name: "Town"},
 	}
 
-	overlay := renderOverlay(m, 2, 2)
+	overlay := renderOverlay(m, 2, 2, false)
 	if overlay == "" {
 		t.Error("expected non-empty overlay for tile with settlement")
 	}
