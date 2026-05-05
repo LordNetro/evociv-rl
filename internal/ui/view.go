@@ -1,9 +1,13 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/marco/evociv-rl/internal/ecs"
+	"github.com/marco/evociv-rl/internal/simulation/npc"
 )
 
 var (
@@ -77,6 +81,39 @@ func renderWelcome(m Model) string {
 	)
 }
 
+func renderInspector(m Model) string {
+	if !m.inspectorOpen {
+		return ""
+	}
+	if m.ecsWorld == nil {
+		return ""
+	}
+
+	nameComp, _ := ecs.GetComponent[ecs.Name](m.ecsWorld, m.selectedNPC)
+	healthComp, _ := ecs.GetComponent[npc.Health](m.ecsWorld, m.selectedNPC)
+	jobComp, _ := ecs.GetComponent[npc.Job](m.ecsWorld, m.selectedNPC)
+	persComp, _ := ecs.GetComponent[npc.Personality](m.ecsWorld, m.selectedNPC)
+	posComp, posOk := ecs.GetComponent[ecs.Position](m.ecsWorld, m.selectedNPC)
+
+	biomeName := "unknown"
+	if m.worldMap != nil && posOk {
+		if tile := m.worldMap.TileAt(int(posComp.X), int(posComp.Y)); tile != nil {
+			biomeName = tile.BiomeID
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString("=== NPC ===\n")
+	b.WriteString("Name: " + nameComp.Name + "\n")
+	b.WriteString(fmt.Sprintf("Health: %.0f/%.0f\n", healthComp.Current, healthComp.Max))
+	b.WriteString("Job: " + jobComp.Role + "\n")
+	b.WriteString("Biome: " + biomeName + "\n")
+	b.WriteString(fmt.Sprintf("O: %.2f C: %.2f E: %.2f A: %.2f N: %.2f\n",
+		persComp.Openness, persComp.Conscientiousness, persComp.Extraversion, persComp.Agreeableness, persComp.Neuroticism))
+
+	return b.String()
+}
+
 func renderMap(m Model) string {
 	if m.worldMap == nil {
 		return lipgloss.Place(m.width, m.height,
@@ -104,6 +141,12 @@ func renderMap(m Model) string {
 				continue
 			}
 
+			overlay := renderOverlay(m, worldX, worldY)
+			if overlay != "" {
+				line.WriteString(overlay)
+				continue
+			}
+
 			tile := m.worldMap.TileAt(worldX, worldY)
 			if tile == nil {
 				line.WriteString(" ")
@@ -122,5 +165,22 @@ func renderMap(m Model) string {
 		lines = append(lines, line.String())
 	}
 
-	return strings.Join(lines, "\n")
+	result := strings.Join(lines, "\n")
+	if m.inspectorOpen {
+		result += "\n" + renderInspector(m)
+	}
+	return result
+}
+
+// renderOverlay returns the styled NPC symbol if an NPC is present at the
+// given world coordinate, otherwise an empty string.
+func renderOverlay(m Model, worldX, worldY int) string {
+	for _, info := range m.npcOverlay {
+		if info.WorldX == worldX && info.WorldY == worldY {
+			return lipgloss.NewStyle().
+				Foreground(info.Color).
+				Render(string(info.Symbol))
+		}
+	}
+	return ""
 }
