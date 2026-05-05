@@ -10,6 +10,7 @@ import (
 	"github.com/marco/evociv-rl/internal/ecs"
 	"github.com/marco/evociv-rl/internal/simulation/goap"
 	"github.com/marco/evociv-rl/internal/simulation/rl"
+	"github.com/marco/evociv-rl/internal/simulation/settlement"
 	"github.com/marco/evociv-rl/internal/world"
 )
 
@@ -43,7 +44,17 @@ func (s *NPCSpawnSystem) Update(w *ecs.World, dt float64) error {
 		return nil
 	}
 	s.spawned = true
-	return Spawn(w, s.wm, s.config, s.seed, s.raceDefs, s.roleDefs)
+
+	// Collect settlement entities for role-to-building matching
+	var settlementEntities []ecs.Entity
+	setStore, ok := w.GetStore(settlement.SettlementID).(*ecs.ComponentStore[settlement.Settlement])
+	if ok && setStore != nil {
+		for e := range setStore.All() {
+			settlementEntities = append(settlementEntities, e)
+		}
+	}
+
+	return Spawn(w, s.wm, s.config, s.seed, s.raceDefs, s.roleDefs, settlementEntities)
 }
 
 // WanderSystem moves NPCs with LOD≥1 to random adjacent compatible tiles.

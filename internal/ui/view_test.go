@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/marco/evociv-rl/internal/ecs"
 	"github.com/marco/evociv-rl/internal/simulation/npc"
+	"github.com/marco/evociv-rl/internal/simulation/settlement"
 	"github.com/marco/evociv-rl/internal/world"
 )
 
@@ -300,5 +301,105 @@ func TestRenderInspectorClosed(t *testing.T) {
 	panel := renderInspector(m)
 	if panel != "" {
 		t.Errorf("expected empty panel when closed, got %q", panel)
+	}
+}
+
+func TestRenderOverlaySettlementPriority(t *testing.T) {
+	wm := world.NewWorldMap(3, 3)
+	for y := 0; y < wm.Height; y++ {
+		for x := 0; x < wm.Width; x++ {
+			wm.TileAt(x, y).BiomeID = "plains"
+		}
+	}
+	m := NewModel()
+	m.SetWorldMap(wm)
+	m.screen = "map"
+	m.width = 80
+	m.height = 24
+	m.ready = true
+	// NPC at (1,1)
+	m.npcOverlay = []npc.NPCRenderInfo{
+		{WorldX: 1, WorldY: 1, Symbol: '@', Color: lipgloss.Color("#FF0000")},
+	}
+	// Settlement at (1,1) — NPC should win
+	m.settlementOverlay = []settlement.SettlementRenderInfo{
+		{WorldX: 1, WorldY: 1, Symbol: '♦', Color: "#8B7355", Name: "Village"},
+	}
+
+	overlay := renderOverlay(m, 1, 1)
+	if !strings.Contains(overlay, "@") {
+		t.Error("expected NPC overlay to take priority over settlement")
+	}
+
+	// Settlement-only tile
+	overlaySettle := renderOverlay(m, 0, 0)
+	if overlaySettle != "" {
+		// no settlement at (0,0), should be empty
+	}
+}
+
+func TestRenderOverlaySettlementOnly(t *testing.T) {
+	wm := world.NewWorldMap(3, 3)
+	for y := 0; y < wm.Height; y++ {
+		for x := 0; x < wm.Width; x++ {
+			wm.TileAt(x, y).BiomeID = "plains"
+		}
+	}
+	m := NewModel()
+	m.SetWorldMap(wm)
+	m.screen = "map"
+	m.width = 80
+	m.height = 24
+	m.ready = true
+	m.settlementOverlay = []settlement.SettlementRenderInfo{
+		{WorldX: 2, WorldY: 2, Symbol: '▲', Color: "#B8860B", Name: "Town"},
+	}
+
+	overlay := renderOverlay(m, 2, 2)
+	if overlay == "" {
+		t.Error("expected non-empty overlay for tile with settlement")
+	}
+	if !strings.Contains(overlay, "▲") {
+		t.Error("expected overlay to contain settlement symbol")
+	}
+}
+
+func TestRenderInspectorSettlementData(t *testing.T) {
+	w := ecs.NewWorld()
+	npc.RegisterStores(w)
+	ecs.RegisterComponentStore[ecs.Position](w, ecs.NewComponentID("position"), ecs.NewComponentStore[ecs.Position]())
+	ecs.RegisterComponentStore[ecs.Name](w, ecs.NewComponentID("name"), ecs.NewComponentStore[ecs.Name]())
+	settlement.RegisterSettlementStores(w)
+
+	e := w.NewEntity()
+	ecs.AddComponent(w, e, ecs.Name{Name: "Norte Aldea del Valle"})
+	ecs.AddComponent(w, e, settlement.Settlement{
+		Name: "Norte Aldea del Valle", Type: "village", Radius: 3,
+		Population: 2, Level: 1, Buildings: []string{"house", "farm"},
+	})
+
+	m := NewModel()
+	m.inspectorOpen = true
+	m.selectedSettlement = int(e)
+	m.ecsWorld = w
+
+	panel := renderInspector(m)
+	if panel == "" {
+		t.Fatal("expected non-empty inspector panel")
+	}
+	if !strings.Contains(panel, "Norte Aldea del Valle") {
+		t.Error("inspector missing settlement name")
+	}
+	if !strings.Contains(panel, "village") {
+		t.Error("inspector missing settlement type")
+	}
+	if !strings.Contains(panel, "Radius: 3") {
+		t.Error("inspector missing radius")
+	}
+	if !strings.Contains(panel, "Population: 2") {
+		t.Error("inspector missing population")
+	}
+	if !strings.Contains(panel, "house") {
+		t.Error("inspector missing buildings")
 	}
 }

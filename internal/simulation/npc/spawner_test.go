@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/marco/evociv-rl/internal/ecs"
+	"github.com/marco/evociv-rl/internal/simulation/settlement"
 	"github.com/marco/evociv-rl/internal/world"
 )
 
@@ -39,7 +40,7 @@ func TestSpawnCount(t *testing.T) {
 	}
 
 	config := SpawnConfig{Density: 0.0015}
-	if err := Spawn(w, wm, config, 42, raceDefs, roleDefs); err != nil {
+	if err := Spawn(w, wm, config, 42, raceDefs, roleDefs, nil); err != nil {
 		t.Fatalf("Spawn error: %v", err)
 	}
 
@@ -62,13 +63,13 @@ func TestSpawnDeterminism(t *testing.T) {
 
 	w1 := ecs.NewWorld()
 	RegisterStores(w1)
-	if err := Spawn(w1, wm, config, 123, raceDefs, roleDefs); err != nil {
+	if err := Spawn(w1, wm, config, 123, raceDefs, roleDefs, nil); err != nil {
 		t.Fatalf("Spawn error: %v", err)
 	}
 
 	w2 := ecs.NewWorld()
 	RegisterStores(w2)
-	if err := Spawn(w2, wm, config, 123, raceDefs, roleDefs); err != nil {
+	if err := Spawn(w2, wm, config, 123, raceDefs, roleDefs, nil); err != nil {
 		t.Fatalf("Spawn error: %v", err)
 	}
 
@@ -104,7 +105,7 @@ func TestSpawnZeroInOcean(t *testing.T) {
 	}
 
 	config := SpawnConfig{Density: 0.0015}
-	if err := Spawn(w, wm, config, 42, raceDefs, roleDefs); err != nil {
+	if err := Spawn(w, wm, config, 42, raceDefs, roleDefs, nil); err != nil {
 		t.Fatalf("Spawn error: %v", err)
 	}
 
@@ -137,7 +138,7 @@ func TestSpawnPlainsGreaterThanTundra(t *testing.T) {
 	}
 
 	config := SpawnConfig{Count: 200} // force many spawns for statistical significance
-	if err := Spawn(w, wm, config, 42, raceDefs, roleDefs); err != nil {
+	if err := Spawn(w, wm, config, 42, raceDefs, roleDefs, nil); err != nil {
 		t.Fatalf("Spawn error: %v", err)
 	}
 
@@ -174,13 +175,13 @@ func TestSpawnDifferentSeedsDifferentPositions(t *testing.T) {
 
 	w1 := ecs.NewWorld()
 	RegisterStores(w1)
-	if err := Spawn(w1, wm, config, 111, raceDefs, roleDefs); err != nil {
+	if err := Spawn(w1, wm, config, 111, raceDefs, roleDefs, nil); err != nil {
 		t.Fatalf("Spawn error: %v", err)
 	}
 
 	w2 := ecs.NewWorld()
 	RegisterStores(w2)
-	if err := Spawn(w2, wm, config, 222, raceDefs, roleDefs); err != nil {
+	if err := Spawn(w2, wm, config, 222, raceDefs, roleDefs, nil); err != nil {
 		t.Fatalf("Spawn error: %v", err)
 	}
 
@@ -219,7 +220,7 @@ func TestAppearanceVariesByRole(t *testing.T) {
 	}
 
 	config := SpawnConfig{Count: 10}
-	if err := Spawn(w, wm, config, 42, raceDefs, roleDefs); err != nil {
+	if err := Spawn(w, wm, config, 42, raceDefs, roleDefs, nil); err != nil {
 		t.Fatalf("Spawn error: %v", err)
 	}
 
@@ -251,7 +252,7 @@ func TestAppearanceSameRole(t *testing.T) {
 	}
 
 	config := SpawnConfig{Count: 5}
-	if err := Spawn(w, wm, config, 42, raceDefs, roleDefs); err != nil {
+	if err := Spawn(w, wm, config, 42, raceDefs, roleDefs, nil); err != nil {
 		t.Fatalf("Spawn error: %v", err)
 	}
 
@@ -284,7 +285,7 @@ func TestSpawnRaceRoleRejection(t *testing.T) {
 	}
 
 	config := SpawnConfig{Count: 10}
-	if err := Spawn(w, wm, config, 42, raceDefs, roleDefs); err != nil {
+	if err := Spawn(w, wm, config, 42, raceDefs, roleDefs, nil); err != nil {
 		t.Fatalf("Spawn error: %v", err)
 	}
 
@@ -292,4 +293,254 @@ func TestSpawnRaceRoleRejection(t *testing.T) {
 	if count != 0 {
 		t.Errorf("expected 0 NPCs when race roles are unknown, got %d", count)
 	}
+}
+
+func TestSpawnFarmerInSettlement(t *testing.T) {
+	wm := makeBiomeWorld("plains", 64, 64)
+	w := ecs.NewWorld()
+	RegisterStores(w)
+	ecs.RegisterComponentStore[ecs.Position](w, ecs.NewComponentID("position"), ecs.NewComponentStore[ecs.Position]())
+	ecs.RegisterComponentStore[ecs.Name](w, ecs.NewComponentID("name"), ecs.NewComponentStore[ecs.Name]())
+	settlement.RegisterSettlementStores(w)
+
+	// Create a village with a farm at (10,10)
+	se := w.NewEntity()
+	ecs.AddComponent(w, se, ecs.Position{X: 10, Y: 10})
+	ecs.AddComponent(w, se, settlement.Settlement{
+		Name: "Test Village", Type: "village", Radius: 3,
+		Buildings: []string{"house", "farm"},
+	})
+
+	raceDefs := []RaceDef{
+		{ID: "human", SpawnWeight: 1.0, Roles: []RoleWeight{{ID: "farmer", Weight: 1.0}}, NamePool: NamePool{First: []string{"A"}, Last: []string{"B"}}},
+	}
+	roleDefs := []RoleDef{
+		{ID: "farmer", Symbol: "@", Color: "#FFD700", Biomes: []string{"plains"}},
+	}
+
+	config := SpawnConfig{Count: 1}
+	if err := Spawn(w, wm, config, 42, raceDefs, roleDefs, []ecs.Entity{se}); err != nil {
+		t.Fatalf("Spawn error: %v", err)
+	}
+
+	// Verify the NPC has a HomeReference to the settlement
+	homeStore := w.GetStore(settlement.HomeRefID).(*ecs.ComponentStore[settlement.HomeReference])
+	found := false
+	for _, h := range homeStore.All() {
+		if h.SettlementEntity == se {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected farmer to have HomeReference to settlement")
+	}
+}
+
+func TestSpawnNomadNoHomeReference(t *testing.T) {
+	wm := makeBiomeWorld("plains", 64, 64)
+	w := ecs.NewWorld()
+	RegisterStores(w)
+	settlement.RegisterSettlementStores(w)
+
+	raceDefs := []RaceDef{
+		{ID: "human", SpawnWeight: 1.0, Roles: []RoleWeight{{ID: "farmer", Weight: 1.0}}, NamePool: NamePool{First: []string{"A"}, Last: []string{"B"}}},
+	}
+	roleDefs := []RoleDef{
+		{ID: "farmer", Symbol: "@", Color: "#FFD700", Biomes: []string{"plains"}},
+	}
+
+	config := SpawnConfig{Count: 1}
+	if err := Spawn(w, wm, config, 42, raceDefs, roleDefs, nil); err != nil {
+		t.Fatalf("Spawn error: %v", err)
+	}
+
+	homeStore := w.GetStore(settlement.HomeRefID).(*ecs.ComponentStore[settlement.HomeReference])
+	if homeStore.Len() != 0 {
+		t.Errorf("expected 0 HomeReferences for nomad, got %d", homeStore.Len())
+	}
+}
+
+func TestSpawnCapacityOverflow(t *testing.T) {
+	wm := makeBiomeWorld("plains", 64, 64)
+	w := ecs.NewWorld()
+	RegisterStores(w)
+	ecs.RegisterComponentStore[ecs.Position](w, ecs.NewComponentID("position"), ecs.NewComponentStore[ecs.Position]())
+	ecs.RegisterComponentStore[ecs.Name](w, ecs.NewComponentID("name"), ecs.NewComponentStore[ecs.Name]())
+	settlement.RegisterSettlementStores(w)
+
+	// Create a small village with radius 1 (capacity 2)
+	se := w.NewEntity()
+	ecs.AddComponent(w, se, ecs.Position{X: 10, Y: 10})
+	ecs.AddComponent(w, se, settlement.Settlement{
+		Name: "Tiny Village", Type: "village", Radius: 1,
+		Buildings: []string{"house", "farm"},
+	})
+
+	raceDefs := []RaceDef{
+		{ID: "human", SpawnWeight: 1.0, Roles: []RoleWeight{{ID: "farmer", Weight: 1.0}}, NamePool: NamePool{First: []string{"A"}, Last: []string{"B"}}},
+	}
+	roleDefs := []RoleDef{
+		{ID: "farmer", Symbol: "@", Color: "#FFD700", Biomes: []string{"plains"}},
+	}
+
+	config := SpawnConfig{Count: 5}
+	if err := Spawn(w, wm, config, 42, raceDefs, roleDefs, []ecs.Entity{se}); err != nil {
+		t.Fatalf("Spawn error: %v", err)
+	}
+
+	// Count how many NPCs have HomeReference to this settlement
+	homeStore := w.GetStore(settlement.HomeRefID).(*ecs.ComponentStore[settlement.HomeReference])
+	assigned := 0
+	for _, h := range homeStore.All() {
+		if h.SettlementEntity == se {
+			assigned++
+		}
+	}
+	if assigned > 2 {
+		t.Errorf("expected at most 2 NPCs assigned to settlement (capacity 2), got %d", assigned)
+	}
+}
+
+func TestSpawnMerchantInTown(t *testing.T) {
+	wm := makeBiomeWorld("plains", 64, 64)
+	w := ecs.NewWorld()
+	RegisterStores(w)
+	ecs.RegisterComponentStore[ecs.Position](w, ecs.NewComponentID("position"), ecs.NewComponentStore[ecs.Position]())
+	ecs.RegisterComponentStore[ecs.Name](w, ecs.NewComponentID("name"), ecs.NewComponentStore[ecs.Name]())
+	settlement.RegisterSettlementStores(w)
+
+	// Create a town with market
+	se := w.NewEntity()
+	ecs.AddComponent(w, se, ecs.Position{X: 20, Y: 20})
+	ecs.AddComponent(w, se, settlement.Settlement{
+		Name: "Market Town", Type: "town", Radius: 5,
+		Buildings: []string{"market", "house", "tavern"},
+	})
+
+	raceDefs := []RaceDef{
+		{ID: "human", SpawnWeight: 1.0, Roles: []RoleWeight{{ID: "merchant", Weight: 1.0}}, NamePool: NamePool{First: []string{"A"}, Last: []string{"B"}}},
+	}
+	roleDefs := []RoleDef{
+		{ID: "merchant", Symbol: "$", Color: "#FFD700", Biomes: []string{"plains"}},
+	}
+
+	config := SpawnConfig{Count: 3}
+	if err := Spawn(w, wm, config, 42, raceDefs, roleDefs, []ecs.Entity{se}); err != nil {
+		t.Fatalf("Spawn error: %v", err)
+	}
+
+	homeStore := w.GetStore(settlement.HomeRefID).(*ecs.ComponentStore[settlement.HomeReference])
+	found := false
+	for _, h := range homeStore.All() {
+		if h.SettlementEntity == se {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("merchant should spawn in town with market")
+	}
+}
+
+func TestSpawnDeterminismWithSettlements(t *testing.T) {
+	wm := makeBiomeWorld("plains", 64, 64)
+	config := SpawnConfig{Density: 0.0015}
+
+	raceDefs := []RaceDef{
+		{ID: "human", SpawnWeight: 1.0, Roles: []RoleWeight{{ID: "farmer", Weight: 1.0}}, NamePool: NamePool{First: []string{"A"}, Last: []string{"B"}}},
+	}
+	roleDefs := []RoleDef{
+		{ID: "farmer", Symbol: "@", Color: "#FFD700", Biomes: []string{"plains"}},
+	}
+
+	// Create a settlement for NPCs to spawn in
+	createWorld := func(w *ecs.World, seed int64) {
+		ecs.RegisterComponentStore[ecs.Position](w, ecs.NewComponentID("position"), ecs.NewComponentStore[ecs.Position]())
+		ecs.RegisterComponentStore[ecs.Name](w, ecs.NewComponentID("name"), ecs.NewComponentStore[ecs.Name]())
+		settlement.RegisterSettlementStores(w)
+		se := w.NewEntity()
+		ecs.AddComponent(w, se, ecs.Position{X: 20, Y: 20})
+		ecs.AddComponent(w, se, settlement.Settlement{
+			Name: "Test Village", Type: "village", Radius: 5,
+			Buildings: []string{"farm", "house"},
+		})
+		if err := Spawn(w, wm, config, seed, raceDefs, roleDefs, []ecs.Entity{se}); err != nil {
+			t.Fatalf("Spawn error with seed %d: %v", seed, err)
+		}
+	}
+
+	w1 := ecs.NewWorld()
+	RegisterStores(w1)
+	createWorld(w1, 123)
+
+	w2 := ecs.NewWorld()
+	RegisterStores(w2)
+	createWorld(w2, 123)
+
+	// Check same number of NPCs
+	posStore1 := w1.GetStore(ecs.NewComponentID("position")).(*ecs.ComponentStore[ecs.Position])
+	posStore2 := w2.GetStore(ecs.NewComponentID("position")).(*ecs.ComponentStore[ecs.Position])
+	if len(posStore1.All()) != len(posStore2.All()) {
+		t.Errorf("different NPC counts: %d vs %d", len(posStore1.All()), len(posStore2.All()))
+	}
+}
+
+func TestSpawnInsideSettlementIgnoresBiomeWeight(t *testing.T) {
+	wm := makeBiomeWorld("ocean", 64, 64)
+	// Override center tiles to be plains so settlement can spawn
+	for y := 28; y < 36; y++ {
+		for x := 28; x < 36; x++ {
+			wm.TileAt(x, y).BiomeID = "plains"
+		}
+	}
+
+	w := ecs.NewWorld()
+	RegisterStores(w)
+	ecs.RegisterComponentStore[ecs.Position](w, ecs.NewComponentID("position"), ecs.NewComponentStore[ecs.Position]())
+	ecs.RegisterComponentStore[ecs.Name](w, ecs.NewComponentID("name"), ecs.NewComponentStore[ecs.Name]())
+	settlement.RegisterSettlementStores(w)
+
+	se := w.NewEntity()
+	ecs.AddComponent(w, se, ecs.Position{X: 32, Y: 32})
+	ecs.AddComponent(w, se, settlement.Settlement{
+		Name: "Coastal Village", Type: "village", Radius: 3,
+		Buildings: []string{"farm", "house"},
+	})
+
+	raceDefs := []RaceDef{
+		{ID: "human", SpawnWeight: 1.0, Roles: []RoleWeight{{ID: "farmer", Weight: 1.0}}, NamePool: NamePool{First: []string{"A"}, Last: []string{"B"}}},
+	}
+	roleDefs := []RoleDef{
+		{ID: "farmer", Symbol: "@", Color: "#FFD700", Biomes: []string{"plains"}},
+	}
+
+	config := SpawnConfig{Count: 5}
+	if err := Spawn(w, wm, config, 42, raceDefs, roleDefs, []ecs.Entity{se}); err != nil {
+		t.Fatalf("Spawn error: %v", err)
+	}
+
+	// NPCs should be inside settlement radius despite ocean biome
+	posStore := w.GetStore(ecs.NewComponentID("position")).(*ecs.ComponentStore[ecs.Position])
+	homeStore := w.GetStore(settlement.HomeRefID).(*ecs.ComponentStore[settlement.HomeReference])
+	if homeStore.Len() == 0 {
+		t.Error("expected NPCs to spawn in settlement despite ocean biome")
+	}
+	for e := range homeStore.All() {
+		pos, ok := posStore.Get(e)
+		if !ok {
+			continue
+		}
+		dist := max(abs(int(pos.X)-32), abs(int(pos.Y)-32))
+		if dist > 3 {
+			t.Errorf("NPC assigned to settlement but at distance %d from center (radius 3)", dist)
+		}
+	}
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }

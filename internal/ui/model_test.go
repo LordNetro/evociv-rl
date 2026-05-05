@@ -7,6 +7,7 @@ import (
 
 	"github.com/marco/evociv-rl/internal/ecs"
 	"github.com/marco/evociv-rl/internal/simulation/npc"
+	"github.com/marco/evociv-rl/internal/simulation/settlement"
 	"github.com/marco/evociv-rl/internal/world"
 )
 
@@ -147,34 +148,35 @@ func TestQuitStillWorks(t *testing.T) {
 	}
 }
 
-func TestArrowKeysWork(t *testing.T) {
-	wm := world.NewWorldMap(10, 10)
+func TestArrowKeysMoveCursor(t *testing.T) {
 	m := NewModel()
-	m.SetWorldMap(wm)
-	m.screen = "map"
+	m.width = 20
+	m.height = 20
+	m.cursorX = 10
+	m.cursorY = 10
 
 	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
 	mm := newModel.(Model)
-	if mm.cameraX != 1 {
-		t.Errorf("cameraX after Right = %d, want 1", mm.cameraX)
+	if mm.cursorX != 11 {
+		t.Errorf("cursorX after Right = %d, want 11", mm.cursorX)
 	}
 
 	newModel, _ = mm.Update(tea.KeyMsg{Type: tea.KeyDown})
 	mm = newModel.(Model)
-	if mm.cameraY != 1 {
-		t.Errorf("cameraY after Down = %d, want 1", mm.cameraY)
+	if mm.cursorY != 11 {
+		t.Errorf("cursorY after Down = %d, want 11", mm.cursorY)
 	}
 
 	newModel, _ = mm.Update(tea.KeyMsg{Type: tea.KeyLeft})
 	mm = newModel.(Model)
-	if mm.cameraX != 0 {
-		t.Errorf("cameraX after Left = %d, want 0", mm.cameraX)
+	if mm.cursorX != 10 {
+		t.Errorf("cursorX after Left = %d, want 10", mm.cursorX)
 	}
 
 	newModel, _ = mm.Update(tea.KeyMsg{Type: tea.KeyUp})
 	mm = newModel.(Model)
-	if mm.cameraY != 0 {
-		t.Errorf("cameraY after Up = %d, want 0", mm.cameraY)
+	if mm.cursorY != 10 {
+		t.Errorf("cursorY after Up = %d, want 10", mm.cursorY)
 	}
 }
 
@@ -242,50 +244,42 @@ func TestInspectorCloseWithEsc(t *testing.T) {
 	}
 }
 
-func TestCursorMovesWhenInspectorOpen(t *testing.T) {
-	wm := world.NewWorldMap(10, 10)
+func TestCursorMovesWithArrows(t *testing.T) {
 	m := NewModel()
-	m.SetWorldMap(wm)
-	m.screen = "map"
-	m.inspectorOpen = true
-	m.cursorX = 0
-	m.cursorY = 0
+	m.width = 50
+	m.height = 50
+	m.cursorX = 25
+	m.cursorY = 25
 
 	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
 	mm := newModel.(Model)
-	if mm.cursorX != 1 {
-		t.Errorf("cursorX = %d, want 1", mm.cursorX)
-	}
-	if mm.cameraX != 0 {
-		t.Error("camera should not move when inspector is open")
+	if mm.cursorX != 26 {
+		t.Errorf("cursorX = %d, want 26", mm.cursorX)
 	}
 }
 
 func TestCursorBounds(t *testing.T) {
-	wm := world.NewWorldMap(5, 5)
 	m := NewModel()
-	m.SetWorldMap(wm)
-	m.screen = "map"
-	m.inspectorOpen = true
-	m.cursorX = 4
-	m.cursorY = 4
+	m.width = 10
+	m.height = 10
+	m.cursorX = 9
+	m.cursorY = 9
 
 	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
 	mm := newModel.(Model)
-	if mm.cursorX != 4 {
-		t.Errorf("cursorX at right edge = %d, want 4", mm.cursorX)
+	if mm.cursorX != 9 {
+		t.Errorf("cursorX at right edge = %d, want 9", mm.cursorX)
 	}
 
 	newModel, _ = mm.Update(tea.KeyMsg{Type: tea.KeyDown})
 	mm = newModel.(Model)
-	if mm.cursorY != 4 {
-		t.Errorf("cursorY at bottom edge = %d, want 4", mm.cursorY)
+	if mm.cursorY != 9 {
+		t.Errorf("cursorY at bottom edge = %d, want 9", mm.cursorY)
 	}
 
 	m2 := NewModel()
-	m2.SetWorldMap(wm)
-	m2.screen = "map"
-	m2.inspectorOpen = true
+	m2.width = 10
+	m2.height = 10
 	m2.cursorX = 0
 	m2.cursorY = 0
 
@@ -299,5 +293,39 @@ func TestCursorBounds(t *testing.T) {
 	mm = newModel.(Model)
 	if mm.cursorY != 0 {
 		t.Errorf("cursorY at top edge = %d, want 0", mm.cursorY)
+	}
+}
+
+func TestSetSettlementOverlay(t *testing.T) {
+	m := NewModel()
+	overlay := []settlement.SettlementRenderInfo{
+		{WorldX: 1, WorldY: 1, Symbol: '♦', Color: "#8B7355", Name: "Village"},
+	}
+	m.SetSettlementOverlay(overlay)
+	if len(m.settlementOverlay) != 1 {
+		t.Errorf("expected 1 settlement overlay, got %d", len(m.settlementOverlay))
+	}
+}
+
+func TestInspectorOpenOnSettlement(t *testing.T) {
+	wm := world.NewWorldMap(5, 5)
+	m := NewModel()
+	m.SetWorldMap(wm)
+	m.screen = "map"
+	m.cameraX = 0
+	m.cameraY = 0
+	m.cursorX = 2
+	m.cursorY = 2
+	m.settlementOverlay = []settlement.SettlementRenderInfo{
+		{Entity: 42, WorldX: 2, WorldY: 2, Symbol: '♦'},
+	}
+
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	mm := newModel.(Model)
+	if !mm.inspectorOpen {
+		t.Error("expected inspector to open on settlement tile")
+	}
+	if mm.selectedSettlement != 42 {
+		t.Errorf("selectedSettlement = %d, want 42", mm.selectedSettlement)
 	}
 }

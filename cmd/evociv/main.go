@@ -13,6 +13,7 @@ import (
 	"github.com/marco/evociv-rl/internal/data"
 	"github.com/marco/evociv-rl/internal/ecs"
 	"github.com/marco/evociv-rl/internal/simulation/npc"
+	"github.com/marco/evociv-rl/internal/simulation/settlement"
 	"github.com/marco/evociv-rl/internal/store"
 	"github.com/marco/evociv-rl/internal/ui"
 	"github.com/marco/evociv-rl/internal/world/gen"
@@ -90,9 +91,20 @@ func run() error {
 		log.Warn("Failed to load actions", "error", err)
 	}
 
+	// Load settlement definitions
+	settlementDefs, err := settlement.LoadSettlementTypes(registry)
+	if err != nil {
+		log.Warn("Failed to load settlement types", "error", err)
+	}
+	buildingDefs, err := settlement.LoadBuildingTypes(registry)
+	if err != nil {
+		log.Warn("Failed to load building types", "error", err)
+	}
+
 	// Initialize ECS world
 	ecsWorld := ecs.NewWorld()
 	npc.RegisterStores(ecsWorld)
+	settlement.RegisterSettlementStores(ecsWorld)
 
 	// Initialize store
 	s := store.NewSQLiteStore()
@@ -111,33 +123,49 @@ func run() error {
 	}
 
 	// Spawn NPCs and run systems once before TUI starts
-		var renderSys *npc.NPCRenderSystem
-		var qlSys *npc.QLearningSystem
-		if worldMap != nil && len(raceDefs) > 0 && len(roleDefs) > 0 {
-			renderSys = npc.NewNPCRenderSystem()
-			ecsWorld.AddSystem(npc.NewNPCSpawnSystem(worldMap, npc.SpawnConfig{}, genConfig.Seed+999, raceDefs, roleDefs))
-			ecsWorld.AddSystem(npc.NewWanderSystem(worldMap, roleDefs, rand.New(rand.NewSource(time.Now().UnixNano()))))
-			ecsWorld.AddSystem(npc.NewLODSystem(func() (int, int) { return 0, 0 }))
-			ecsWorld.AddSystem(npc.NewNeedsDecaySystem())
-			if len(actionDefs) > 0 {
-				ecsWorld.AddSystem(npc.NewGOAPSystem(worldMap, actionDefs))
-				qlSys = npc.NewQLearningSystem(worldMap, actionDefs, rand.New(rand.NewSource(time.Now().UnixNano())))
-				ecsWorld.AddSystem(qlSys)
-			}
-			ecsWorld.AddSystem(renderSys)
-
-		if err := ecsWorld.Update(0); err != nil {
-			log.Warn("ECS update failed", "error", err)
+	var npcRenderSys *npc.NPCRenderSystem
+	var setRenderSys *settlement.SettlementRenderSystem
+	var qlSys *npc.QLearningSystem
+	if worldMap != nil {
+		setRenderSys = settlement.NewSettlementRenderSystem()
+		ecsWorld.AddSystem(settlement.NewSettlementSpawnSystem(worldMap, genConfig.Seed, settlementDefs, buildingDefs))
+		ecsWorld.AddSystem(setRenderSys)
+	}
+	if worldMap != nil && len(raceDefs) > 0 && len(roleDefs) > 0 {
+		npcRenderSys = npc.NewNPCRenderSystem()
+		ecsWorld.AddSystem(npc.NewNPCSpawnSystem(worldMap, npc.SpawnConfig{}, genConfig.Seed+999, raceDefs, roleDefs))
+		ecsWorld.AddSystem(npc.NewWanderSystem(worldMap, roleDefs, rand.New(rand.NewSource(time.Now().UnixNano()))))
+		playerX, playerY := genConfig.Width/2, genConfig.Height/2
+		ecsWorld.AddSystem(npc.NewLODSystem(func() (int, int) { return playerX, playerY }))
+		ecsWorld.AddSystem(npc.NewNeedsDecaySystem())
+		if len(actionDefs) > 0 {
+			ecsWorld.AddSystem(npc.NewGOAPSystem(worldMap, actionDefs))
+			qlSys = npc.NewQLearningSystem(worldMap, actionDefs, rand.New(rand.NewSource(time.Now().UnixNano())))
+			ecsWorld.AddSystem(qlSys)
 		}
+		ecsWorld.AddSystem(npcRenderSys)
+	}
 
-		// Re-run LOD with camera at center for better initial visibility
+	if err := ecsWorld.Update(0); err != nil {
+		log.Warn("ECS update failed", "error", err)
+	}
+
+	// Re-run LOD with camera at center for better initial visibility
+	if worldMap != nil && len(raceDefs) > 0 && len(roleDefs) > 0 {
 		cx, cy := genConfig.Width/2, genConfig.Height/2
 		lodSys := npc.NewLODSystem(func() (int, int) { return cx, cy })
 		if err := lodSys.Update(ecsWorld, 0); err != nil {
 			log.Warn("LOD update failed", "error", err)
 		}
-		if err := renderSys.Update(ecsWorld, 0); err != nil {
-			log.Warn("Render update failed", "error", err)
+		if npcRenderSys != nil {
+			if err := npcRenderSys.Update(ecsWorld, 0); err != nil {
+				log.Warn("NPC render update failed", "error", err)
+			}
+		}
+	}
+	if setRenderSys != nil {
+		if err := setRenderSys.Update(ecsWorld, 0); err != nil {
+			log.Warn("Settlement render update failed", "error", err)
 		}
 	}
 
@@ -149,8 +177,11 @@ func run() error {
 	model.SetECSWorld(ecsWorld)
 
 	// Gather render infos for overlay
-	if renderSys != nil {
-		model.SetNPCOverlay(renderSys.RenderInfos())
+	if npcRenderSys != nil {
+		model.SetNPCOverlay(npcRenderSys.RenderInfos())
+	}
+	if setRenderSys != nil {
+		model.SetSettlementOverlay(setRenderSys.RenderInfos())
 	}
 
 	// Load Q-table from store if available

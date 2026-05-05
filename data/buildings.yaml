@@ -1,0 +1,14 @@
+kind: building-types
+data:
+  - id: house
+    name: Casa
+  - id: farm
+    name: Granja
+  - id: market
+    name: Mercado
+  - id: tavern
+    name: Taberna
+  - id: temple
+    name: Templo
+  - id: blacksmith
+    name: Herreria

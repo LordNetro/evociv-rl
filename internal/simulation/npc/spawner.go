@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/marco/evociv-rl/internal/ecs"
+	"github.com/marco/evociv-rl/internal/simulation/settlement"
 	"github.com/marco/evociv-rl/internal/world"
 )
 
@@ -23,8 +24,17 @@ func biomeWeight(biome string) float64 {
 	}
 }
 
+// roleToBuildings maps NPC roles to the building types they prefer.
+var roleToBuildings = map[string][]string{
+	"farmer":     {"farm"},
+	"merchant":   {"market"},
+	"trader":     {"market"},
+	"priest":     {"temple"},
+	"blacksmith": {"blacksmith"},
+}
+
 // Spawn creates NPCs in the ECS world based on the provided configuration.
-func Spawn(w *ecs.World, wm *world.WorldMap, config SpawnConfig, seed int64, raceDefs []RaceDef, roleDefs []RoleDef) error {
+func Spawn(w *ecs.World, wm *world.WorldMap, config SpawnConfig, seed int64, raceDefs []RaceDef, roleDefs []RoleDef, settlementEntities []ecs.Entity) error {
 	count := config.Count
 	if count == 0 {
 		area := float64(wm.Width * wm.Height)
@@ -56,6 +66,16 @@ func Spawn(w *ecs.World, wm *world.WorldMap, config SpawnConfig, seed int64, rac
 		return fmt.Errorf("position store not registered")
 	}
 
+	// Settlement data for population tracking
+	setStore, setOk := w.GetStore(settlement.SettlementID).(*ecs.ComponentStore[settlement.Settlement])
+	homeStore, homeOk := w.GetStore(settlement.HomeRefID).(*ecs.ComponentStore[settlement.HomeReference])
+	popCount := make(map[ecs.Entity]int)
+	if homeOk && homeStore != nil {
+		for _, h := range homeStore.All() {
+			popCount[h.SettlementEntity]++
+		}
+	}
+
 	for i := 0; i < count; i++ {
 		// 1. Choose race
 		race := pickRace(raceDefs, totalRaceWeight, rng)
@@ -75,41 +95,70 @@ func Spawn(w *ecs.World, wm *world.WorldMap, config SpawnConfig, seed int64, rac
 			continue // race-role rejection
 		}
 
-		// 4. Find valid position
+		// 4. Try to find a compatible settlement
 		var posX, posY int
-		found := false
-		for attempt := 0; attempt < 100; attempt++ {
-			x := rng.Intn(wm.Width)
-			y := rng.Intn(wm.Height)
-			tile := wm.TileAt(x, y)
-			if tile == nil {
-				continue
+		var found bool
+		var assignedSettlement ecs.Entity
+
+		if setOk && len(settlementEntities) > 0 {
+			compatible := findCompatibleSettlements(roleDef.ID, settlementEntities, setStore, popCount)
+			if len(compatible) > 0 {
+				// Pick one deterministically using settlement_index seeding
+				pickRNG := rand.New(rand.NewSource(seed + 999 + int64(i)))
+				se := compatible[pickRNG.Intn(len(compatible))]
+				setComp, _ := setStore.Get(se)
+				setPos, _ := posStore.Get(se)
+				// Random position within settlement radius
+				radius := setComp.Radius
+				if radius < 1 {
+					radius = 1
+				}
+				x := int(setPos.X) - radius + pickRNG.Intn(radius*2+1)
+				y := int(setPos.Y) - radius + pickRNG.Intn(radius*2+1)
+				if wm.InBounds(x, y) && !isOccupied(posStore, x, y) {
+					posX, posY = x, y
+					found = true
+					assignedSettlement = se
+					popCount[se]++
+				}
 			}
-			wgt := biomeWeight(tile.BiomeID)
-			if wgt <= 0 {
-				continue
+		}
+
+		// 5. Nomad fallback: biome-weighted random position
+		if !found {
+			for attempt := 0; attempt < 100; attempt++ {
+				x := rng.Intn(wm.Width)
+				y := rng.Intn(wm.Height)
+				tile := wm.TileAt(x, y)
+				if tile == nil {
+					continue
+				}
+				wgt := biomeWeight(tile.BiomeID)
+				if wgt <= 0 {
+					continue
+				}
+				if !biomeCompatible(tile.BiomeID, roleDef.Biomes) {
+					continue
+				}
+				if rng.Float64() > wgt {
+					continue
+				}
+				if isOccupied(posStore, x, y) {
+					continue
+				}
+				posX, posY = x, y
+				found = true
+				break
 			}
-			if !biomeCompatible(tile.BiomeID, roleDef.Biomes) {
-				continue
-			}
-			if rng.Float64() > wgt {
-				continue
-			}
-			if isOccupied(posStore, x, y) {
-				continue
-			}
-			posX, posY = x, y
-			found = true
-			break
 		}
 		if !found {
 			continue
 		}
 
-		// 5. Generate name
+		// 6. Generate name
 		name := generateName(race.NamePool, rng)
 
-		// 6. Create entity and components
+		// 7. Create entity and components
 		e := w.NewEntity()
 		ecs.AddComponent(w, e, ecs.Position{X: float64(posX), Y: float64(posY)})
 		ecs.AddComponent(w, e, ecs.Name{Name: name})
@@ -122,9 +171,54 @@ func Spawn(w *ecs.World, wm *world.WorldMap, config SpawnConfig, seed int64, rac
 			Color:  lipgloss.Color(roleDef.Color),
 		})
 		ecs.AddComponent(w, e, LOD{Level: LODLocal})
+
+		if assignedSettlement != 0 {
+			ecs.AddComponent(w, e, settlement.HomeReference{SettlementEntity: assignedSettlement})
+		}
 	}
 
 	return nil
+}
+
+func findCompatibleSettlements(roleID string, candidates []ecs.Entity, setStore *ecs.ComponentStore[settlement.Settlement], popCount map[ecs.Entity]int) []ecs.Entity {
+	var compatible []ecs.Entity
+	for _, se := range candidates {
+		set, ok := setStore.Get(se)
+		if !ok {
+			continue
+		}
+		// Capacity check
+		cap := set.Radius * 2
+		if popCount[se] >= cap {
+			continue
+		}
+		// Role-to-building matching
+		if preferred, ok := roleToBuildings[roleID]; ok {
+			hasBuilding := false
+			for _, b := range set.Buildings {
+				for _, p := range preferred {
+					if b == p {
+						hasBuilding = true
+						break
+					}
+				}
+				if hasBuilding {
+					break
+				}
+			}
+			if !hasBuilding {
+				continue
+			}
+		} else if roleID == "hunter" {
+			// Hunter prefers village or town (not city)
+			if set.Type != "village" && set.Type != "town" {
+				continue
+			}
+		}
+		// miner and artisan accept any settlement
+		compatible = append(compatible, se)
+	}
+	return compatible
 }
 
 func pickRace(races []RaceDef, totalWeight float64, rng *rand.Rand) *RaceDef {
