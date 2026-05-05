@@ -1,0 +1,26 @@
+mode: set
+github.com/marco/evociv-rl/cmd/evociv/main.go:18.13,19.30 1 0
+github.com/marco/evociv-rl/cmd/evociv/main.go:19.30,22.3 2 0
+github.com/marco/evociv-rl/cmd/evociv/main.go:25.18,33.57 6 1
+github.com/marco/evociv-rl/cmd/evociv/main.go:33.57,35.3 1 0
+github.com/marco/evociv-rl/cmd/evociv/main.go:36.2,40.16 3 1
+github.com/marco/evociv-rl/cmd/evociv/main.go:40.16,51.3 2 0
+github.com/marco/evociv-rl/cmd/evociv/main.go:52.2,52.45 1 1
+github.com/marco/evociv-rl/cmd/evociv/main.go:52.45,56.3 3 0
+github.com/marco/evociv-rl/cmd/evociv/main.go:59.2,60.16 2 1
+github.com/marco/evociv-rl/cmd/evociv/main.go:60.16,65.3 2 0
+github.com/marco/evociv-rl/cmd/evociv/main.go:68.2,69.16 2 1
+github.com/marco/evociv-rl/cmd/evociv/main.go:69.16,72.3 2 0
+github.com/marco/evociv-rl/cmd/evociv/main.go:72.8,74.3 1 0
+github.com/marco/evociv-rl/cmd/evociv/main.go:77.2,81.44 3 0
+github.com/marco/evociv-rl/cmd/evociv/main.go:81.44,83.3 1 0
+github.com/marco/evociv-rl/cmd/evociv/main.go:83.8,85.36 2 0
+github.com/marco/evociv-rl/cmd/evociv/main.go:85.36,87.4 1 0
+github.com/marco/evociv-rl/cmd/evociv/main.go:88.3,88.22 1 0
+github.com/marco/evociv-rl/cmd/evociv/main.go:88.22,89.89 1 0
+github.com/marco/evociv-rl/cmd/evociv/main.go:89.89,91.5 1 0
+github.com/marco/evociv-rl/cmd/evociv/main.go:96.2,97.21 2 0
+github.com/marco/evociv-rl/cmd/evociv/main.go:97.21,99.3 1 0
+github.com/marco/evociv-rl/cmd/evociv/main.go:100.2,101.35 2 0
+github.com/marco/evociv-rl/cmd/evociv/main.go:101.35,103.3 1 0
+github.com/marco/evociv-rl/cmd/evociv/main.go:105.2,105.12 1 0
