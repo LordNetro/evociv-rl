@@ -1,0 +1,23 @@
+mode: set
+github.com/marco/evociv-rl/internal/store/sqlite.go:17.36,19.2 1 1
+github.com/marco/evociv-rl/internal/store/sqlite.go:22.47,24.16 2 1
+github.com/marco/evociv-rl/internal/store/sqlite.go:24.16,26.3 1 0
+github.com/marco/evociv-rl/internal/store/sqlite.go:27.2,29.34 3 1
+github.com/marco/evociv-rl/internal/store/sqlite.go:29.34,31.3 1 1
+github.com/marco/evociv-rl/internal/store/sqlite.go:32.2,32.20 1 1
+github.com/marco/evociv-rl/internal/store/sqlite.go:35.39,43.16 2 1
+github.com/marco/evociv-rl/internal/store/sqlite.go:43.16,45.3 1 0
+github.com/marco/evociv-rl/internal/store/sqlite.go:46.2,46.12 1 1
+github.com/marco/evociv-rl/internal/store/sqlite.go:50.70,55.16 2 1
+github.com/marco/evociv-rl/internal/store/sqlite.go:55.16,57.3 1 0
+github.com/marco/evociv-rl/internal/store/sqlite.go:58.2,58.12 1 1
+github.com/marco/evociv-rl/internal/store/sqlite.go:62.84,64.57 2 1
+github.com/marco/evociv-rl/internal/store/sqlite.go:64.57,66.3 1 1
+github.com/marco/evociv-rl/internal/store/sqlite.go:67.2,67.33 1 1
+github.com/marco/evociv-rl/internal/store/sqlite.go:71.37,72.17 1 1
+github.com/marco/evociv-rl/internal/store/sqlite.go:72.17,74.3 1 0
+github.com/marco/evociv-rl/internal/store/sqlite.go:75.2,75.21 1 1
+github.com/marco/evociv-rl/internal/store/sqlite.go:79.38,80.17 1 1
+github.com/marco/evociv-rl/internal/store/sqlite.go:80.17,82.3 1 0
+github.com/marco/evociv-rl/internal/store/sqlite.go:83.2,83.20 1 1
+github.com/marco/evociv-rl/internal/store/sqlite.go:87.37,89.2 1 1

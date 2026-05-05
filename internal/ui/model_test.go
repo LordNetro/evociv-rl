@@ -5,6 +5,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/marco/evociv-rl/internal/ecs"
+	"github.com/marco/evociv-rl/internal/simulation/npc"
 	"github.com/marco/evociv-rl/internal/world"
 )
 
@@ -173,5 +175,129 @@ func TestArrowKeysWork(t *testing.T) {
 	mm = newModel.(Model)
 	if mm.cameraY != 0 {
 		t.Errorf("cameraY after Up = %d, want 0", mm.cameraY)
+	}
+}
+
+func TestInspectorOpenOnNPC(t *testing.T) {
+	wm := world.NewWorldMap(5, 5)
+	m := NewModel()
+	m.SetWorldMap(wm)
+	m.screen = "map"
+	m.cameraX = 0
+	m.cameraY = 0
+	m.cursorX = 1
+	m.cursorY = 1
+	m.npcOverlay = []npc.NPCRenderInfo{
+		{Entity: ecs.Entity(1), WorldX: 1, WorldY: 1, Symbol: '@'},
+	}
+
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	mm := newModel.(Model)
+	if !mm.inspectorOpen {
+		t.Error("expected inspector to open")
+	}
+	if mm.selectedNPC != ecs.Entity(1) {
+		t.Errorf("selectedNPC = %d, want 1", mm.selectedNPC)
+	}
+}
+
+func TestInspectorNoOpOnEmptyTile(t *testing.T) {
+	wm := world.NewWorldMap(5, 5)
+	m := NewModel()
+	m.SetWorldMap(wm)
+	m.screen = "map"
+	m.npcOverlay = []npc.NPCRenderInfo{
+		{Entity: ecs.Entity(1), WorldX: 2, WorldY: 2},
+	}
+
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	mm := newModel.(Model)
+	if mm.inspectorOpen {
+		t.Error("expected inspector to stay closed on empty tile")
+	}
+}
+
+func TestInspectorCloseWithQ(t *testing.T) {
+	m := NewModel()
+	m.inspectorOpen = true
+	m.screen = "map"
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	mm := newModel.(Model)
+	if mm.inspectorOpen {
+		t.Error("expected inspector to close with q")
+	}
+	if mm.quitting {
+		t.Error("q should not quit when inspector is open")
+	}
+}
+
+func TestInspectorCloseWithEsc(t *testing.T) {
+	m := NewModel()
+	m.inspectorOpen = true
+	m.screen = "map"
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	mm := newModel.(Model)
+	if mm.inspectorOpen {
+		t.Error("expected inspector to close with esc")
+	}
+}
+
+func TestCursorMovesWhenInspectorOpen(t *testing.T) {
+	wm := world.NewWorldMap(10, 10)
+	m := NewModel()
+	m.SetWorldMap(wm)
+	m.screen = "map"
+	m.inspectorOpen = true
+	m.cursorX = 0
+	m.cursorY = 0
+
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	mm := newModel.(Model)
+	if mm.cursorX != 1 {
+		t.Errorf("cursorX = %d, want 1", mm.cursorX)
+	}
+	if mm.cameraX != 0 {
+		t.Error("camera should not move when inspector is open")
+	}
+}
+
+func TestCursorBounds(t *testing.T) {
+	wm := world.NewWorldMap(5, 5)
+	m := NewModel()
+	m.SetWorldMap(wm)
+	m.screen = "map"
+	m.inspectorOpen = true
+	m.cursorX = 4
+	m.cursorY = 4
+
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	mm := newModel.(Model)
+	if mm.cursorX != 4 {
+		t.Errorf("cursorX at right edge = %d, want 4", mm.cursorX)
+	}
+
+	newModel, _ = mm.Update(tea.KeyMsg{Type: tea.KeyDown})
+	mm = newModel.(Model)
+	if mm.cursorY != 4 {
+		t.Errorf("cursorY at bottom edge = %d, want 4", mm.cursorY)
+	}
+
+	m2 := NewModel()
+	m2.SetWorldMap(wm)
+	m2.screen = "map"
+	m2.inspectorOpen = true
+	m2.cursorX = 0
+	m2.cursorY = 0
+
+	newModel, _ = m2.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	mm = newModel.(Model)
+	if mm.cursorX != 0 {
+		t.Errorf("cursorX at left edge = %d, want 0", mm.cursorX)
+	}
+
+	newModel, _ = mm.Update(tea.KeyMsg{Type: tea.KeyUp})
+	mm = newModel.(Model)
+	if mm.cursorY != 0 {
+		t.Errorf("cursorY at top edge = %d, want 0", mm.cursorY)
 	}
 }

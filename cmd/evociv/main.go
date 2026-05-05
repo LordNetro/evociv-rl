@@ -2,14 +2,17 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"path"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
 
 	"github.com/marco/evociv-rl/internal/data"
 	"github.com/marco/evociv-rl/internal/ecs"
+	"github.com/marco/evociv-rl/internal/simulation/npc"
 	"github.com/marco/evociv-rl/internal/store"
 	"github.com/marco/evociv-rl/internal/ui"
 	"github.com/marco/evociv-rl/internal/world/gen"
@@ -73,8 +76,23 @@ func run() error {
 		log.Info("World generated", "width", genConfig.Width, "height", genConfig.Height, "seed", genConfig.Seed)
 	}
 
+	// Load NPC definitions
+	raceDefs, err := npc.LoadNpcRaces(registry)
+	if err != nil {
+		log.Warn("Failed to load NPC races", "error", err)
+	}
+	roleDefs, err := npc.LoadNpcRoles(registry)
+	if err != nil {
+		log.Warn("Failed to load NPC roles", "error", err)
+	}
+	actionDefs, err := npc.LoadActions(registry)
+	if err != nil {
+		log.Warn("Failed to load actions", "error", err)
+	}
+
 	// Initialize ECS world
-	_ = ecs.NewWorld()
+	ecsWorld := ecs.NewWorld()
+	npc.RegisterStores(ecsWorld)
 
 	// Initialize store
 	s := store.NewSQLiteStore()
@@ -86,9 +104,40 @@ func run() error {
 			log.Warn("Store health check failed", "error", err)
 		}
 		if worldMap != nil {
-			if err := s.SaveWorld(genConfig.Seed, genConfig.Width, genConfig.Height); err != nil {
+			if err := s.SaveWorld(genConfig.Seed, genConfig.Width, genConfig.Height, 999); err != nil {
 				log.Warn("Failed to save world", "error", err)
 			}
+		}
+	}
+
+	// Spawn NPCs and run systems once before TUI starts
+		var renderSys *npc.NPCRenderSystem
+		var qlSys *npc.QLearningSystem
+		if worldMap != nil && len(raceDefs) > 0 && len(roleDefs) > 0 {
+			renderSys = npc.NewNPCRenderSystem()
+			ecsWorld.AddSystem(npc.NewNPCSpawnSystem(worldMap, npc.SpawnConfig{}, genConfig.Seed+999, raceDefs, roleDefs))
+			ecsWorld.AddSystem(npc.NewWanderSystem(worldMap, roleDefs, rand.New(rand.NewSource(time.Now().UnixNano()))))
+			ecsWorld.AddSystem(npc.NewLODSystem(func() (int, int) { return 0, 0 }))
+			ecsWorld.AddSystem(npc.NewNeedsDecaySystem())
+			if len(actionDefs) > 0 {
+				ecsWorld.AddSystem(npc.NewGOAPSystem(worldMap, actionDefs))
+				qlSys = npc.NewQLearningSystem(worldMap, actionDefs, rand.New(rand.NewSource(time.Now().UnixNano())))
+				ecsWorld.AddSystem(qlSys)
+			}
+			ecsWorld.AddSystem(renderSys)
+
+		if err := ecsWorld.Update(0); err != nil {
+			log.Warn("ECS update failed", "error", err)
+		}
+
+		// Re-run LOD with camera at center for better initial visibility
+		cx, cy := genConfig.Width/2, genConfig.Height/2
+		lodSys := npc.NewLODSystem(func() (int, int) { return cx, cy })
+		if err := lodSys.Update(ecsWorld, 0); err != nil {
+			log.Warn("LOD update failed", "error", err)
+		}
+		if err := renderSys.Update(ecsWorld, 0); err != nil {
+			log.Warn("Render update failed", "error", err)
 		}
 	}
 
@@ -97,9 +146,34 @@ func run() error {
 	if worldMap != nil {
 		model.SetWorldMap(worldMap)
 	}
+	model.SetECSWorld(ecsWorld)
+
+	// Gather render infos for overlay
+	if renderSys != nil {
+		model.SetNPCOverlay(renderSys.RenderInfos())
+	}
+
+	// Load Q-table from store if available
+	if qlSys != nil && s != nil {
+		data, err := s.LoadQTable(0)
+		if err == nil && len(data) > 0 {
+			qlSys.QTable().LoadValues(data)
+			log.Info("Q-table loaded", "states", len(data))
+		}
+	}
+
 	p := tea.NewProgram(model)
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("tui: %w", err)
+	}
+
+	// Save Q-table after TUI closes
+	if qlSys != nil && s != nil {
+		if err := s.SaveQTable(0, qlSys.QTable().Values()); err != nil {
+			log.Warn("Failed to save Q-table", "error", err)
+		} else {
+			log.Info("Q-table saved")
+		}
 	}
 
 	return nil
