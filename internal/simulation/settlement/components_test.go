@@ -56,3 +56,50 @@ func TestComponentIDsUnique(t *testing.T) {
 		t.Error("ResourceID is zero")
 	}
 }
+
+func TestResourceStoreAdd(t *testing.T) {
+	rs := ResourceStore{Resources: map[string]float64{"food": 10}}
+	rs.Add("food", 5)
+	if rs.Resources["food"] != 15 {
+		t.Errorf("food = %f, want 15", rs.Resources["food"])
+	}
+	rs.Add("gold", 3)
+	if rs.Resources["gold"] != 3 {
+		t.Errorf("gold = %f, want 3", rs.Resources["gold"])
+	}
+}
+
+func TestResourceStoreRemoveSufficient(t *testing.T) {
+	rs := ResourceStore{Resources: map[string]float64{"food": 10}}
+	ok := rs.Remove("food", 3)
+	if !ok {
+		t.Error("expected Remove to return true")
+	}
+	if rs.Resources["food"] != 7 {
+		t.Errorf("food = %f, want 7", rs.Resources["food"])
+	}
+}
+
+func TestResourceStoreRemoveInsufficient(t *testing.T) {
+	rs := ResourceStore{Resources: map[string]float64{"food": 1}}
+	ok := rs.Remove("food", 5)
+	if ok {
+		t.Error("expected Remove to return false")
+	}
+	if rs.Resources["food"] != 1 {
+		t.Errorf("food = %f, want 1", rs.Resources["food"])
+	}
+}
+
+func TestResourceStoreHas(t *testing.T) {
+	rs := ResourceStore{Resources: map[string]float64{"food": 10}}
+	if !rs.Has("food", 5) {
+		t.Error("expected Has(food,5) to be true")
+	}
+	if rs.Has("food", 15) {
+		t.Error("expected Has(food,15) to be false")
+	}
+	if rs.Has("gold", 1) {
+		t.Error("expected Has(gold,1) to be false")
+	}
+}

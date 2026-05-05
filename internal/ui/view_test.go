@@ -403,3 +403,157 @@ func TestRenderInspectorSettlementData(t *testing.T) {
 		t.Error("inspector missing buildings")
 	}
 }
+
+func TestRenderMapStatusBarWithResources(t *testing.T) {
+	wm := world.NewWorldMap(3, 3)
+	for y := 0; y < wm.Height; y++ {
+		for x := 0; x < wm.Width; x++ {
+			wm.TileAt(x, y).BiomeID = "plains"
+		}
+	}
+	m := NewModel()
+	m.SetWorldMap(wm)
+	m.screen = "map"
+	m.width = 80
+	m.height = 24
+	m.ready = true
+	m.cameraX = 0
+	m.cameraY = 0
+	m.cursorX = 1
+	m.cursorY = 1
+	m.settlementOverlay = []settlement.SettlementRenderInfo{
+		{WorldX: 1, WorldY: 1, Symbol: '♦', Color: "#8B7355", Name: "Aldea", Population: 5, HasResources: true, Food: 45, Gold: 12, Tools: 3},
+	}
+
+	v := m.View()
+	if !strings.Contains(v, "Pop: 5") {
+		t.Error("status bar missing population")
+	}
+	if !strings.Contains(v, "Food: 45") {
+		t.Error("status bar missing food")
+	}
+	if !strings.Contains(v, "Gold: 12") {
+		t.Error("status bar missing gold")
+	}
+	if !strings.Contains(v, "Tools: 3") {
+		t.Error("status bar missing tools")
+	}
+}
+
+func TestRenderMapStatusBarNoResources(t *testing.T) {
+	wm := world.NewWorldMap(3, 3)
+	for y := 0; y < wm.Height; y++ {
+		for x := 0; x < wm.Width; x++ {
+			wm.TileAt(x, y).BiomeID = "plains"
+		}
+	}
+	m := NewModel()
+	m.SetWorldMap(wm)
+	m.screen = "map"
+	m.width = 80
+	m.height = 24
+	m.ready = true
+	m.cameraX = 0
+	m.cameraY = 0
+	m.cursorX = 1
+	m.cursorY = 1
+	m.settlementOverlay = []settlement.SettlementRenderInfo{
+		{WorldX: 1, WorldY: 1, Symbol: '♦', Color: "#8B7355", Name: "Aldea", Population: 5, HasResources: false},
+	}
+
+	v := m.View()
+	if !strings.Contains(v, "Pop: 5") {
+		t.Error("status bar missing population")
+	}
+	// Should not show resource values when HasResources is false
+	if strings.Contains(v, "Food:") {
+		t.Error("status bar should not show food when no ResourceStore")
+	}
+}
+
+func TestRenderInspectorSettlementResources(t *testing.T) {
+	w := ecs.NewWorld()
+	npc.RegisterStores(w)
+	settlement.RegisterSettlementStores(w)
+
+	e := w.NewEntity()
+	ecs.AddComponent(w, e, settlement.Settlement{
+		Name: "Aldea", Type: "village", Radius: 3,
+		Population: 5, Level: 1, Buildings: []string{"house", "farm"},
+	})
+	ecs.AddComponent(w, e, settlement.ResourceStore{Resources: map[string]float64{
+		"food": 45, "gold": 12, "tools": 3,
+	}})
+
+	m := NewModel()
+	m.inspectorOpen = true
+	m.selectedSettlement = int(e)
+	m.ecsWorld = w
+
+	panel := renderInspector(m)
+	if panel == "" {
+		t.Fatal("expected non-empty inspector panel")
+	}
+	if !strings.Contains(panel, "Food: 45") {
+		t.Error("inspector missing food")
+	}
+	if !strings.Contains(panel, "Gold: 12") {
+		t.Error("inspector missing gold")
+	}
+	if !strings.Contains(panel, "Tools: 3") {
+		t.Error("inspector missing tools")
+	}
+	if !strings.Contains(panel, "Next Level: 2") {
+		t.Error("inspector missing next level info")
+	}
+}
+
+func TestRenderInspectorSettlementMaxLevel(t *testing.T) {
+	w := ecs.NewWorld()
+	npc.RegisterStores(w)
+	settlement.RegisterSettlementStores(w)
+
+	e := w.NewEntity()
+	ecs.AddComponent(w, e, settlement.Settlement{
+		Name: "Aldea", Type: "city", Radius: 6,
+		Population: 10, Level: 3, Buildings: []string{"house", "temple"},
+	})
+	ecs.AddComponent(w, e, settlement.ResourceStore{Resources: map[string]float64{
+		"food": 100, "gold": 50, "tools": 20,
+	}})
+
+	m := NewModel()
+	m.inspectorOpen = true
+	m.selectedSettlement = int(e)
+	m.ecsWorld = w
+
+	panel := renderInspector(m)
+	if !strings.Contains(panel, "Level: 3 (MAX)") {
+		t.Errorf("inspector missing max level indicator, got: %s", panel)
+	}
+}
+
+func TestRenderInspectorFamineWarning(t *testing.T) {
+	w := ecs.NewWorld()
+	npc.RegisterStores(w)
+	settlement.RegisterSettlementStores(w)
+
+	e := w.NewEntity()
+	ecs.AddComponent(w, e, settlement.Settlement{
+		Name: "Aldea", Type: "village", Radius: 3,
+		Population: 5, Level: 1,
+	})
+	ecs.AddComponent(w, e, settlement.ResourceStore{Resources: map[string]float64{
+		"food": -5, "gold": 0, "tools": 0,
+	}})
+
+	m := NewModel()
+	m.inspectorOpen = true
+	m.selectedSettlement = int(e)
+	m.ecsWorld = w
+
+	panel := renderInspector(m)
+	if !strings.Contains(panel, "⚠ Famine") {
+		t.Errorf("inspector missing famine warning, got: %s", panel)
+	}
+}

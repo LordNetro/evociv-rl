@@ -12,6 +12,7 @@ import (
 
 	"github.com/marco/evociv-rl/internal/data"
 	"github.com/marco/evociv-rl/internal/ecs"
+	"github.com/marco/evociv-rl/internal/simulation/economy"
 	"github.com/marco/evociv-rl/internal/simulation/npc"
 	"github.com/marco/evociv-rl/internal/simulation/settlement"
 	"github.com/marco/evociv-rl/internal/store"
@@ -100,6 +101,10 @@ func run() error {
 	if err != nil {
 		log.Warn("Failed to load building types", "error", err)
 	}
+	growthThresholds, err := settlement.LoadGrowthThresholds(registry)
+	if err != nil {
+		log.Warn("Failed to load growth thresholds", "error", err)
+	}
 
 	// Initialize ECS world
 	ecsWorld := ecs.NewWorld()
@@ -130,6 +135,9 @@ func run() error {
 		setRenderSys = settlement.NewSettlementRenderSystem()
 		ecsWorld.AddSystem(settlement.NewSettlementSpawnSystem(worldMap, genConfig.Seed, settlementDefs, buildingDefs))
 		ecsWorld.AddSystem(settlement.NewPopulationSystem())
+		ecsWorld.AddSystem(economy.NewSettlementEconomySystem(buildingDefs))
+		ecsWorld.AddSystem(economy.NewSettlementGrowthSystem(growthThresholds))
+		ecsWorld.AddSystem(economy.NewFamineSystem())
 		ecsWorld.AddSystem(setRenderSys)
 	}
 	if worldMap != nil && len(raceDefs) > 0 && len(roleDefs) > 0 {

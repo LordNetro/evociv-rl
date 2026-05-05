@@ -260,3 +260,155 @@ data:
 		t.Errorf("expected validation to pass, got error: %v", err)
 	}
 }
+
+func TestLoadBuildingTypesWithEconomicFields(t *testing.T) {
+	fsys := fstest.MapFS{
+		"data/buildings.yaml": &fstest.MapFile{
+			Data: []byte(`kind: building-types
+data:
+  - id: farm
+    name: Granja
+    role: farmer
+    produces:
+      food: 2.0
+    max_workers: 3
+  - id: market
+    name: Mercado
+    role: merchant
+    produces:
+      gold: 1.0
+    consumes:
+      food: 0.5
+    max_workers: 2
+  - id: house
+    name: Casa
+`),
+		},
+	}
+
+	loader := data.NewLoader(fsys)
+	registry := data.NewRegistry()
+	if err := loader.LoadAll("data", registry); err != nil {
+		t.Fatalf("load data: %v", err)
+	}
+
+	defs, err := LoadBuildingTypes(registry)
+	if err != nil {
+		t.Fatalf("LoadBuildingTypes error: %v", err)
+	}
+	if len(defs) != 3 {
+		t.Fatalf("expected 3 building types, got %d", len(defs))
+	}
+
+	farm := defs[0]
+	if farm.ID != "farm" {
+		t.Errorf("first ID = %q, want farm", farm.ID)
+	}
+	if farm.Role != "farmer" {
+		t.Errorf("farm role = %q, want farmer", farm.Role)
+	}
+	if farm.MaxWorkers != 3 {
+		t.Errorf("farm max_workers = %d, want 3", farm.MaxWorkers)
+	}
+	if farm.Produces == nil || farm.Produces["food"] != 2.0 {
+		t.Errorf("farm produces food = %v, want 2.0", farm.Produces)
+	}
+
+	market := defs[1]
+	if market.Consumes == nil || market.Consumes["food"] != 0.5 {
+		t.Errorf("market consumes food = %v, want 0.5", market.Consumes)
+	}
+	if market.Produces == nil || market.Produces["gold"] != 1.0 {
+		t.Errorf("market produces gold = %v, want 1.0", market.Produces)
+	}
+
+	house := defs[2]
+	if house.Role != "" {
+		t.Errorf("house role = %q, want empty", house.Role)
+	}
+	if house.Produces != nil {
+		t.Errorf("house produces = %v, want nil", house.Produces)
+	}
+	if house.MaxWorkers != 0 {
+		t.Errorf("house max_workers = %d, want 0", house.MaxWorkers)
+	}
+}
+
+func TestLoadBuildingTypesRejectsNegativeRate(t *testing.T) {
+	fsys := fstest.MapFS{
+		"data/buildings.yaml": &fstest.MapFile{
+			Data: []byte(`kind: building-types
+data:
+  - id: farm
+    name: Granja
+    produces:
+      food: -1.0
+`),
+		},
+	}
+
+	loader := data.NewLoader(fsys)
+	registry := data.NewRegistry()
+	if err := loader.LoadAll("data", registry); err != nil {
+		t.Fatalf("load data: %v", err)
+	}
+
+	_, err := LoadBuildingTypes(registry)
+	if err == nil {
+		t.Error("expected error for negative production rate")
+	}
+}
+
+func TestLoadGrowthThresholdsValid(t *testing.T) {
+	fsys := fstest.MapFS{
+		"data/growth.yaml": &fstest.MapFile{
+			Data: []byte(`kind: growth-thresholds
+data:
+  - level: 2
+    food: 100
+    tools: 10
+    gold: 5
+    new_radius: 4
+  - level: 3
+    food: 500
+    tools: 50
+    gold: 25
+    new_radius: 6
+`),
+		},
+	}
+
+	loader := data.NewLoader(fsys)
+	registry := data.NewRegistry()
+	if err := loader.LoadAll("data", registry); err != nil {
+		t.Fatalf("load data: %v", err)
+	}
+
+	thresholds, err := LoadGrowthThresholds(registry)
+	if err != nil {
+		t.Fatalf("LoadGrowthThresholds error: %v", err)
+	}
+	if len(thresholds) != 2 {
+		t.Fatalf("expected 2 thresholds, got %d", len(thresholds))
+	}
+	if thresholds[0].Level != 2 {
+		t.Errorf("first level = %d, want 2", thresholds[0].Level)
+	}
+	if thresholds[0].Food != 100 {
+		t.Errorf("first food = %f, want 100", thresholds[0].Food)
+	}
+	if thresholds[1].Gold != 25 {
+		t.Errorf("second gold = %f, want 25", thresholds[1].Gold)
+	}
+}
+
+func TestLoadGrowthThresholdsMissing(t *testing.T) {
+	registry := data.NewRegistry()
+	thresholds, err := LoadGrowthThresholds(registry)
+	if err != nil {
+		t.Errorf("expected no error for missing growth-thresholds, got %v", err)
+	}
+	if len(thresholds) != 0 {
+		t.Errorf("expected empty thresholds, got %d", len(thresholds))
+	}
+}

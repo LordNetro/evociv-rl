@@ -58,6 +58,43 @@ func LoadSettlementTypes(registry *data.Registry) ([]SettlementDef, error) {
 	return defs, nil
 }
 
+// LoadGrowthThresholds loads growth threshold definitions from the data registry.
+func LoadGrowthThresholds(registry *data.Registry) ([]GrowthThreshold, error) {
+	raw, ok := data.Get[[]any](registry, "growth-thresholds")
+	if !ok {
+		return nil, nil // missing is not an error
+	}
+
+	var defs []GrowthThreshold
+	for _, item := range raw {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		d := GrowthThreshold{}
+		if v, ok := toInt(m["level"]); ok {
+			d.Level = v
+		}
+		if v, ok := toFloat64(m["food"]); ok {
+			d.Food = v
+		}
+		if v, ok := toFloat64(m["tools"]); ok {
+			d.Tools = v
+		}
+		if v, ok := toFloat64(m["gold"]); ok {
+			d.Gold = v
+		}
+		if v, ok := toInt(m["new_radius"]); ok {
+			d.NewRadius = v
+		}
+		if v, ok := toStringSlice(m["new_buildings"]); ok {
+			d.NewBuildings = v
+		}
+		defs = append(defs, d)
+	}
+	return defs, nil
+}
+
 // LoadBuildingTypes loads building definitions from the data registry.
 func LoadBuildingTypes(registry *data.Registry) ([]BuildingDef, error) {
 	raw, ok := data.Get[[]any](registry, "building-types")
@@ -77,6 +114,34 @@ func LoadBuildingTypes(registry *data.Registry) ([]BuildingDef, error) {
 		}
 		if v, ok := m["name"].(string); ok {
 			d.Name = v
+		}
+		if v, ok := m["role"].(string); ok {
+			d.Role = v
+		}
+		if v, ok := toInt(m["max_workers"]); ok {
+			d.MaxWorkers = v
+		}
+		if v, ok := m["produces"].(map[string]any); ok {
+			d.Produces = make(map[string]float64)
+			for rk, rv := range v {
+				if f, ok := toFloat64(rv); ok {
+					if f < 0 {
+						return nil, fmt.Errorf("building %q: negative production rate for %q: %f", d.ID, rk, f)
+					}
+					d.Produces[rk] = f
+				}
+			}
+		}
+		if v, ok := m["consumes"].(map[string]any); ok {
+			d.Consumes = make(map[string]float64)
+			for rk, rv := range v {
+				if f, ok := toFloat64(rv); ok {
+					if f < 0 {
+						return nil, fmt.Errorf("building %q: negative consumption rate for %q: %f", d.ID, rk, f)
+					}
+					d.Consumes[rk] = f
+				}
+			}
 		}
 		defs = append(defs, d)
 	}
@@ -118,6 +183,21 @@ func toFloat64(v any) (float64, bool) {
 		return float64(val), true
 	default:
 		return 0, false
+	}
+}
+
+func toStringSlice(v any) ([]string, bool) {
+	switch val := v.(type) {
+	case []any:
+		result := make([]string, 0, len(val))
+		for _, item := range val {
+			if s, ok := item.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return result, true
+	default:
+		return nil, false
 	}
 }
 

@@ -145,6 +145,23 @@ func renderSettlementInspector(m Model) string {
 	b.WriteString(fmt.Sprintf("Level: %d\n", setComp.Level))
 	b.WriteString("Buildings: " + strings.Join(setComp.Buildings, ", ") + "\n")
 
+	// Resources
+	if rs, ok := ecs.GetComponent[settlement.ResourceStore](m.ecsWorld, ecs.Entity(m.selectedSettlement)); ok {
+		b.WriteString(fmt.Sprintf("Food: %.0f\n", rs.Resources["food"]))
+		b.WriteString(fmt.Sprintf("Gold: %.0f\n", rs.Resources["gold"]))
+		b.WriteString(fmt.Sprintf("Tools: %.0f\n", rs.Resources["tools"]))
+		if rs.Resources["food"] < 0 {
+			b.WriteString("⚠ Famine\n")
+		}
+	}
+
+	// Level progress
+	if setComp.Level >= 3 {
+		b.WriteString("Level: 3 (MAX)\n")
+	} else {
+		b.WriteString(fmt.Sprintf("Next Level: %d\n", setComp.Level+1))
+	}
+
 	return b.String()
 }
 
@@ -216,10 +233,15 @@ func renderMap(m Model) string {
 		wy := m.cameraY + m.cursorY
 		for _, info := range m.settlementOverlay {
 			if info.WorldX == wx && info.WorldY == wy {
+				status := fmt.Sprintf(" %s %s | Pop: %d ", string(info.Symbol), info.Name, info.Population)
+				if info.HasResources {
+					status = fmt.Sprintf(" %s %s | Pop: %d | Food: %.0f Gold: %.0f Tools: %.0f ",
+						string(info.Symbol), info.Name, info.Population, info.Food, info.Gold, info.Tools)
+				}
 				result += "\n" + lipgloss.NewStyle().
 					Background(lipgloss.Color("#333333")).
 					Foreground(lipgloss.Color(info.Color)).
-					Render(fmt.Sprintf(" %s %s | Pop: %d ", string(info.Symbol), info.Name, info.Population))
+					Render(status)
 				break
 			}
 		}

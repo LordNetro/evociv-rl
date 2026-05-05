@@ -248,6 +248,7 @@ func (s *SettlementRenderSystem) Update(w *ecs.World, dt float64) error {
 	s.renderInfos = nil
 	posStore := w.GetStore(ecs.NewComponentID("position")).(*ecs.ComponentStore[ecs.Position])
 	setStore, _ := w.GetStore(SettlementID).(*ecs.ComponentStore[Settlement])
+	resStore, _ := w.GetStore(ResourceID).(*ecs.ComponentStore[ResourceStore])
 	if setStore == nil {
 		return nil
 	}
@@ -257,7 +258,7 @@ func (s *SettlementRenderSystem) Update(w *ecs.World, dt float64) error {
 		if !ok {
 			continue
 		}
-		s.renderInfos = append(s.renderInfos, SettlementRenderInfo{
+		info := SettlementRenderInfo{
 			Entity:     int(e),
 			Symbol:     []rune(set.Symbol)[0],
 			Color:      set.Color,
@@ -265,7 +266,17 @@ func (s *SettlementRenderSystem) Update(w *ecs.World, dt float64) error {
 			WorldX:     int(pos.X),
 			WorldY:     int(pos.Y),
 			Population: set.Population,
-		})
+			Level:      set.Level,
+		}
+		if resStore != nil {
+			if rs, ok := resStore.Get(e); ok {
+				info.HasResources = true
+				info.Food = rs.Resources["food"]
+				info.Gold = rs.Resources["gold"]
+				info.Tools = rs.Resources["tools"]
+			}
+		}
+		s.renderInfos = append(s.renderInfos, info)
 	}
 	return nil
 }

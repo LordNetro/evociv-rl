@@ -33,6 +33,35 @@ type ResourceStore struct {
 	Resources map[string]float64 // {"food": 100, "gold": 50} — para futuro
 }
 
+// Add increments the amount of a resource.
+func (rs *ResourceStore) Add(resource string, amount float64) {
+	if rs.Resources == nil {
+		rs.Resources = make(map[string]float64)
+	}
+	rs.Resources[resource] += amount
+}
+
+// Remove decrements the amount of a resource if sufficient.
+// Returns true if the removal was successful.
+func (rs *ResourceStore) Remove(resource string, amount float64) bool {
+	if rs.Resources == nil {
+		return false
+	}
+	if rs.Resources[resource] < amount {
+		return false
+	}
+	rs.Resources[resource] -= amount
+	return true
+}
+
+// Has reports whether the store has at least the given amount of a resource.
+func (rs *ResourceStore) Has(resource string, amount float64) bool {
+	if rs.Resources == nil {
+		return false
+	}
+	return rs.Resources[resource] >= amount
+}
+
 // Component IDs for the settlement component types.
 var (
 	SettlementID = ecs.NewComponentID("settlement")

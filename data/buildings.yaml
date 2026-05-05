@@ -4,11 +4,25 @@ data:
     name: Casa
   - id: farm
     name: Granja
+    role: farmer
+    produces:
+      food: 2.0
+    max_workers: 3
   - id: market
     name: Mercado
+    role: merchant
+    produces:
+      gold: 1.0
+    consumes:
+      food: 0.5
+    max_workers: 2
   - id: tavern
     name: Taberna
   - id: temple
     name: Templo
   - id: blacksmith
     name: Herreria
+    role: smith
+    produces:
+      tools: 1.0
+    max_workers: 2

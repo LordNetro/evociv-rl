@@ -14,8 +14,22 @@ type SettlementDef struct {
 
 // BuildingDef defines a building type loaded from YAML.
 type BuildingDef struct {
-	ID   string `yaml:"id"`
-	Name string `yaml:"name"`
+	ID         string             `yaml:"id"`
+	Name       string             `yaml:"name"`
+	Role       string             `yaml:"role"`
+	Produces   map[string]float64 `yaml:"produces"`
+	Consumes   map[string]float64 `yaml:"consumes"`
+	MaxWorkers int                `yaml:"max_workers"`
+}
+
+// GrowthThreshold defines resource requirements for settlement level-up.
+type GrowthThreshold struct {
+	Level        int     `yaml:"level"`
+	Food         float64 `yaml:"food"`
+	Tools        float64 `yaml:"tools"`
+	Gold         float64 `yaml:"gold"`
+	NewRadius    int     `yaml:"new_radius"`
+	NewBuildings []string `yaml:"new_buildings"`
 }
 
 // SettlementRenderInfo carries everything the TUI needs to draw a settlement overlay.
@@ -26,6 +40,11 @@ type SettlementRenderInfo struct {
 	Name           string
 	WorldX, WorldY int
 	Population     int
+	Level          int
+	Food           float64
+	Gold           float64
+	Tools          float64
+	HasResources   bool
 }
 
 // Name pools for procedural settlement naming.
