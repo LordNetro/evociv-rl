@@ -2,6 +2,7 @@ package gen
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/marco/evociv-rl/internal/world"
 )
@@ -28,16 +29,24 @@ func Generate(w, h int, config GenConfig, biomes []BiomeDef) (*world.WorldMap, e
 				continue
 			}
 
-			// Phase 1: Height
-			tile.Height = FBM2D(float64(x), float64(y), config.Octaves, config.Lacunarity, config.Gain, config.Scale, config.Seed)
+			// Phase 1: Height (normalized from [-1,1] to [0,1])
+			rawHeight := FBM2D(float64(x), float64(y), config.Octaves, config.Lacunarity, config.Gain, config.Scale, config.Seed)
+			tile.Height = (rawHeight + 1.0) / 2.0
 
-			// Phase 2: Humidity
-			tile.Humidity = FBM2D(float64(x), float64(y), config.Octaves, config.Lacunarity, config.Gain, config.Scale, config.Seed+1)
+			// Phase 2: Humidity (normalized from [-1,1] to [0,1])
+			rawHumidity := FBM2D(float64(x), float64(y), config.Octaves, config.Lacunarity, config.Gain, config.Scale, config.Seed+1)
+			tile.Humidity = (rawHumidity + 1.0) / 2.0
 
-			// Phase 3: Temperature (modulated by height)
+			// Phase 3: Temperature (modulated by height, normalized to [0,1])
 			rawTemp := FBM2D(float64(x), float64(y), config.Octaves, config.Lacunarity, config.Gain, config.Scale, config.Seed+2)
-			heightFactor := (tile.Height + 1.0) / 2.0 // normalize height from [-1,1] to [0,1]
-			tile.Temperature = rawTemp * heightFactor
+			baseTemp := (rawTemp + 1.0) / 2.0
+			// Higher altitude = colder
+			altitudeFactor := 1.0 - tile.Height
+			tile.Temperature = math.Max(0, math.Min(1, baseTemp*altitudeFactor*0.8+0.1))
+
+			// Clamp values to [0, 1] for biome matching
+			tile.Height = math.Max(0, math.Min(1, tile.Height))
+			tile.Humidity = math.Max(0, math.Min(1, tile.Humidity))
 
 			// Phase 4: Biome
 			tile.BiomeID = MatchBiome(*tile, biomes)

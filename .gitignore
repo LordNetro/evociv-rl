@@ -1,0 +1,21 @@
+# Binaries
+evociv.exe
+cmd/evociv/evociv.exe
+
+# Databases
+*.db
+
+# Coverage
+coverage.out
+cmd_coverage.out
+store_coverage.out
+ui_coverage.out
+coverage/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

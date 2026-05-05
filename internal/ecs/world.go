@@ -112,6 +112,11 @@ func (w *World) AddSystem(s System) {
 	w.systems.AddSystem(s)
 }
 
+// Systems returns all registered systems.
+func (w *World) Systems() []System {
+	return w.systems.Systems()
+}
+
 // Update runs all systems with the given delta time.
 func (w *World) Update(dt float64) error {
 	return w.systems.UpdateAll(w, dt)

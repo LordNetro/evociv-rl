@@ -1,9 +1,14 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/marco/evociv-rl/internal/ecs"
+	"github.com/marco/evociv-rl/internal/simulation/npc"
+	"github.com/marco/evociv-rl/internal/simulation/settlement"
 )
 
 var (
@@ -77,6 +82,67 @@ func renderWelcome(m Model) string {
 	)
 }
 
+func renderInspector(m Model) string {
+	if !m.inspectorOpen {
+		return ""
+	}
+	if m.ecsWorld == nil {
+		return ""
+	}
+
+	if m.selectedNPC != 0 {
+		return renderNPCInspector(m)
+	}
+	if m.selectedSettlement != 0 {
+		return renderSettlementInspector(m)
+	}
+	return ""
+}
+
+func renderNPCInspector(m Model) string {
+	nameComp, _ := ecs.GetComponent[ecs.Name](m.ecsWorld, m.selectedNPC)
+	healthComp, _ := ecs.GetComponent[npc.Health](m.ecsWorld, m.selectedNPC)
+	jobComp, _ := ecs.GetComponent[npc.Job](m.ecsWorld, m.selectedNPC)
+	persComp, _ := ecs.GetComponent[npc.Personality](m.ecsWorld, m.selectedNPC)
+	posComp, posOk := ecs.GetComponent[ecs.Position](m.ecsWorld, m.selectedNPC)
+
+	biomeName := "unknown"
+	if m.worldMap != nil && posOk {
+		if tile := m.worldMap.TileAt(int(posComp.X), int(posComp.Y)); tile != nil {
+			biomeName = tile.BiomeID
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString("=== NPC ===\n")
+	b.WriteString("Name: " + nameComp.Name + "\n")
+	b.WriteString(fmt.Sprintf("Health: %.0f/%.0f\n", healthComp.Current, healthComp.Max))
+	b.WriteString("Job: " + jobComp.Role + "\n")
+	b.WriteString("Biome: " + biomeName + "\n")
+	b.WriteString(fmt.Sprintf("O: %.2f C: %.2f E: %.2f A: %.2f N: %.2f\n",
+		persComp.Openness, persComp.Conscientiousness, persComp.Extraversion, persComp.Agreeableness, persComp.Neuroticism))
+
+	return b.String()
+}
+
+func renderSettlementInspector(m Model) string {
+	setComp, ok := ecs.GetComponent[settlement.Settlement](m.ecsWorld, ecs.Entity(m.selectedSettlement))
+	if !ok {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("=== Settlement ===\n")
+	b.WriteString("Name: " + setComp.Name + "\n")
+	b.WriteString("Type: " + setComp.Type + "\n")
+	b.WriteString(fmt.Sprintf("Population: %d\n", setComp.Population))
+	b.WriteString(fmt.Sprintf("Radius: %d\n", setComp.Radius))
+	b.WriteString(fmt.Sprintf("Level: %d\n", setComp.Level))
+	b.WriteString("Buildings: " + strings.Join(setComp.Buildings, ", ") + "\n")
+
+	return b.String()
+}
+
 func renderMap(m Model) string {
 	if m.worldMap == nil {
 		return lipgloss.Place(m.width, m.height,
@@ -104,9 +170,25 @@ func renderMap(m Model) string {
 				continue
 			}
 
+			isCursor := worldX == m.cameraX+m.cursorX && worldY == m.cameraY+m.cursorY
+
+			overlay := renderOverlay(m, worldX, worldY)
+			if overlay != "" {
+				if isCursor {
+					// Show cursor around NPC overlay
+					overlay = lipgloss.NewStyle().Background(lipgloss.Color("#FFD700")).Render(string(overlay[0]))
+				}
+				line.WriteString(overlay)
+				continue
+			}
+
 			tile := m.worldMap.TileAt(worldX, worldY)
 			if tile == nil {
-				line.WriteString(" ")
+				if isCursor {
+					line.WriteString(lipgloss.NewStyle().Background(lipgloss.Color("#FFD700")).Render(" "))
+				} else {
+					line.WriteString(" ")
+				}
 				continue
 			}
 
@@ -117,10 +199,47 @@ func renderMap(m Model) string {
 			styled := lipgloss.NewStyle().
 				Foreground(lipgloss.Color(style.color)).
 				Render(style.symbol)
+			if isCursor {
+				styled = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("#000000")).
+					Background(lipgloss.Color("#FFD700")).
+					Render(style.symbol)
+			}
 			line.WriteString(styled)
 		}
 		lines = append(lines, line.String())
 	}
 
-	return strings.Join(lines, "\n")
+	result := strings.Join(lines, "\n")
+	if m.inspectorOpen {
+		result += "\n" + renderInspector(m)
+	}
+	return result
+}
+
+// renderOverlay returns the styled overlay symbol at the given world coordinate.
+// Priority: NPC > Settlement > Biome (empty string falls through to biome).
+func renderOverlay(m Model, worldX, worldY int) string {
+	// 1. NPC overlay (highest priority)
+	for _, info := range m.npcOverlay {
+		if info.WorldX == worldX && info.WorldY == worldY {
+			return lipgloss.NewStyle().
+				Foreground(info.Color).
+				Render(string(info.Symbol))
+		}
+	}
+	// 2. Settlement overlay (middle priority)
+	for _, info := range m.settlementOverlay {
+		if info.WorldX == worldX && info.WorldY == worldY {
+			return styledSettlement(info)
+		}
+	}
+	// 3. Biome tile (default — handled in renderMap)
+	return ""
+}
+
+func styledSettlement(info settlement.SettlementRenderInfo) string {
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color(info.Color)).
+		Render(string(info.Symbol))
 }

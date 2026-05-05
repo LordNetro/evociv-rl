@@ -1,0 +1,26 @@
+kind: npc-roles
+data:
+  - id: farmer
+    symbol: "@"
+    color: "#FFD700"
+    biomes: [plains]
+  - id: hunter
+    symbol: "@"
+    color: "#8B4513"
+    biomes: [forest, jungle]
+  - id: merchant
+    symbol: "@"
+    color: "#00CED1"
+    biomes: [plains]
+  - id: artisan
+    symbol: "@"
+    color: "#FF69B4"
+    biomes: [plains]
+  - id: miner
+    symbol: "\u263a"
+    color: "#C0C0C0"
+    biomes: [plains, desert]
+  - id: smith
+    symbol: "\u263a"
+    color: "#FF4500"
+    biomes: [plains]
