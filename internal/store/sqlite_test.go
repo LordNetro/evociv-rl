@@ -232,7 +232,7 @@ func TestMigrationAddsColumnToExistingDB(t *testing.T) {
 		t.Fatalf("Close error: %v", err)
 	}
 
-	// Re-open with new code — migration should add column
+	// Re-open same database
 	s2 := NewSQLiteStore()
 	if err := s2.Open(path); err != nil {
 		t.Fatalf("second Open error: %v", err)
@@ -248,5 +248,92 @@ func TestMigrationAddsColumnToExistingDB(t *testing.T) {
 	}
 	if offset != 999 {
 		t.Errorf("default npcSeedOffset = %d, want 999", offset)
+	}
+}
+
+func TestSaveAndLoadQTable(t *testing.T) {
+	path := t.TempDir() + "/test.db"
+	s := NewSQLiteStore()
+	if err := s.Open(path); err != nil {
+		t.Fatalf("Open error: %v", err)
+	}
+	defer s.Close()
+
+	data := map[string]map[string]float64{
+		"hunger|plains|day": {
+			"harvest": 0.5,
+			"rest":    0.1,
+		},
+		"fatigue|forest|day": {
+			"rest": 0.8,
+		},
+	}
+
+	if err := s.SaveQTable(1, data); err != nil {
+		t.Fatalf("SaveQTable error: %v", err)
+	}
+
+	loaded, err := s.LoadQTable(1)
+	if err != nil {
+		t.Fatalf("LoadQTable error: %v", err)
+	}
+
+	if len(loaded) != 2 {
+		t.Fatalf("expected 2 states, got %d", len(loaded))
+	}
+	if loaded["hunger|plains|day"]["harvest"] != 0.5 {
+		t.Errorf("harvest Q = %f, want 0.5", loaded["hunger|plains|day"]["harvest"])
+	}
+	if loaded["fatigue|forest|day"]["rest"] != 0.8 {
+		t.Errorf("rest Q = %f, want 0.8", loaded["fatigue|forest|day"]["rest"])
+	}
+}
+
+func TestLoadEmptyQTable(t *testing.T) {
+	path := t.TempDir() + "/test.db"
+	s := NewSQLiteStore()
+	if err := s.Open(path); err != nil {
+		t.Fatalf("Open error: %v", err)
+	}
+	defer s.Close()
+
+	loaded, err := s.LoadQTable(1)
+	if err != nil {
+		t.Fatalf("LoadQTable error: %v", err)
+	}
+	if len(loaded) != 0 {
+		t.Errorf("expected empty map, got %d entries", len(loaded))
+	}
+}
+
+func TestQTablePersistenceAcrossOpenClose(t *testing.T) {
+	path := t.TempDir() + "/test.db"
+
+	s1 := NewSQLiteStore()
+	if err := s1.Open(path); err != nil {
+		t.Fatalf("Open error: %v", err)
+	}
+	data := map[string]map[string]float64{
+		"state1": {"action1": 1.23},
+	}
+	if err := s1.SaveQTable(42, data); err != nil {
+		t.Fatalf("SaveQTable error: %v", err)
+	}
+	if err := s1.Close(); err != nil {
+		t.Fatalf("Close error: %v", err)
+	}
+
+	s2 := NewSQLiteStore()
+	if err := s2.Open(path); err != nil {
+		t.Fatalf("second Open error: %v", err)
+	}
+	defer s2.Close()
+
+	loaded, err := s2.LoadQTable(42)
+	if err != nil {
+		t.Fatalf("LoadQTable error: %v", err)
+	}
+	if loaded["state1"]["action1"] != 1.23 {
+		t.Errorf("Q-value = %f, want 1.23", loaded["state1"]["action1"])
 	}
 }

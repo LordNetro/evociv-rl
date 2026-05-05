@@ -78,6 +78,7 @@ func TestAllComponentTypes(t *testing.T) {
 	ecs.AddComponent(w, e, AIState{Goals: []string{"wander"}})
 	ecs.AddComponent(w, e, Appearance{Symbol: '@', Color: lipgloss.Color("#FFFFFF")})
 	ecs.AddComponent(w, e, LOD{Level: LODLocal})
+	ecs.AddComponent(w, e, Needs{Hunger: 0.3, Fatigue: 0.7})
 
 	if h, ok := ecs.GetComponent[Health](w, e); !ok || h.Max != 20 {
 		t.Error("Health not retrieved")
@@ -96,5 +97,45 @@ func TestAllComponentTypes(t *testing.T) {
 	}
 	if l, ok := ecs.GetComponent[LOD](w, e); !ok || l.Level != LODLocal {
 		t.Error("LOD not retrieved")
+	}
+	if n, ok := ecs.GetComponent[Needs](w, e); !ok || n.Hunger != 0.3 || n.Fatigue != 0.7 {
+		t.Errorf("Needs not retrieved: got %+v", n)
+	}
+}
+
+func TestNeedsZeroInit(t *testing.T) {
+	w := ecs.NewWorld()
+	RegisterStores(w)
+
+	e := w.NewEntity()
+	ecs.AddComponent(w, e, Needs{})
+
+	n, ok := ecs.GetComponent[Needs](w, e)
+	if !ok {
+		t.Fatal("expected Needs component to exist")
+	}
+	if n.Hunger != 0.0 || n.Fatigue != 0.0 {
+		t.Errorf("expected zero-init Needs, got Hunger=%.2f Fatigue=%.2f", n.Hunger, n.Fatigue)
+	}
+}
+
+func TestNeedsClampedAtMax(t *testing.T) {
+	w := ecs.NewWorld()
+	RegisterStores(w)
+
+	e := w.NewEntity()
+	ecs.AddComponent(w, e, Needs{Hunger: 0.99, Fatigue: 0.99})
+
+	// Needs component stores raw values; clamping is done by the system
+	// But we verify the component can hold values near 1.0
+	n, ok := ecs.GetComponent[Needs](w, e)
+	if !ok {
+		t.Fatal("expected Needs component to exist")
+	}
+	if n.Hunger < 0 || n.Hunger > 1.0 {
+		t.Errorf("Hunger %.2f out of range [0,1]", n.Hunger)
+	}
+	if n.Fatigue < 0 || n.Fatigue > 1.0 {
+		t.Errorf("Fatigue %.2f out of range [0,1]", n.Fatigue)
 	}
 }

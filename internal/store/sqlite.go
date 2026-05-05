@@ -54,6 +54,17 @@ func (s *SQLiteStore) migrate() error {
 			return fmt.Errorf("migrate add npc_seed_offset: %w", err)
 		}
 	}
+
+	_, err = s.db.Exec(`CREATE TABLE IF NOT EXISTS qtable (
+		npc_id    INTEGER,
+		state_key TEXT,
+		action_id TEXT,
+		q_value   REAL,
+		PRIMARY KEY (npc_id, state_key, action_id)
+	)`)
+	if err != nil {
+		return fmt.Errorf("migrate qtable: %w", err)
+	}
 	return nil
 }
 
@@ -97,4 +108,58 @@ func (s *SQLiteStore) Health() error {
 // Path returns the database file path.
 func (s *SQLiteStore) Path() string {
 	return s.path
+}
+
+// SaveQTable persists Q-values for a given NPC.
+func (s *SQLiteStore) SaveQTable(npcID int, qTable map[string]map[string]float64) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec("DELETE FROM qtable WHERE npc_id = ?", npcID)
+	if err != nil {
+		return fmt.Errorf("delete old qtable: %w", err)
+	}
+
+	stmt, err := tx.Prepare("INSERT INTO qtable (npc_id, state_key, action_id, q_value) VALUES (?, ?, ?, ?)")
+	if err != nil {
+		return fmt.Errorf("prepare insert: %w", err)
+	}
+	defer stmt.Close()
+
+	for state, actions := range qTable {
+		for action, value := range actions {
+			_, err = stmt.Exec(npcID, state, action, value)
+			if err != nil {
+				return fmt.Errorf("insert qvalue: %w", err)
+			}
+		}
+	}
+
+	return tx.Commit()
+}
+
+// LoadQTable retrieves Q-values for a given NPC.
+func (s *SQLiteStore) LoadQTable(npcID int) (map[string]map[string]float64, error) {
+	rows, err := s.db.Query("SELECT state_key, action_id, q_value FROM qtable WHERE npc_id = ?", npcID)
+	if err != nil {
+		return nil, fmt.Errorf("query qtable: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string]map[string]float64)
+	for rows.Next() {
+		var state, action string
+		var value float64
+		if err := rows.Scan(&state, &action, &value); err != nil {
+			return nil, fmt.Errorf("scan qvalue: %w", err)
+		}
+		if result[state] == nil {
+			result[state] = make(map[string]float64)
+		}
+		result[state][action] = value
+	}
+	return result, rows.Err()
 }

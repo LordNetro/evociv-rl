@@ -48,6 +48,39 @@ type SpawnConfig struct {
 	Density float64
 }
 
+// NeedsValues represents hunger and fatigue as a pair, used in action requirements.
+type NeedsValues struct {
+	Hunger  float64 `yaml:"hunger"`
+	Fatigue float64 `yaml:"fatigue"`
+}
+
+// ActionDef defines a GOAP action loaded from YAML.
+type ActionDef struct {
+	ID       string         `yaml:"id"`
+	Name     string         `yaml:"name"`
+	Requires ActionRequires `yaml:"requires"`
+	Effects  ActionEffects  `yaml:"effects"`
+	Reward   ActionReward   `yaml:"reward"`
+}
+
+// ActionRequires defines biome and need constraints for an action.
+type ActionRequires struct {
+	Biomes   []string    `yaml:"biomes"`
+	NeedsMin NeedsValues `yaml:"needs_min"`
+	NeedsMax NeedsValues `yaml:"needs_max"`
+}
+
+// ActionEffects defines how an action changes needs.
+type ActionEffects struct {
+	HungerChange  float64 `yaml:"hunger_change"`
+	FatigueChange float64 `yaml:"fatigue_change"`
+}
+
+// ActionReward defines the base reward for completing an action.
+type ActionReward struct {
+	Base float64 `yaml:"base"`
+}
+
 // NPCRenderInfo carries everything the TUI needs to draw an NPC overlay.
 type NPCRenderInfo struct {
 	Entity         ecs.Entity

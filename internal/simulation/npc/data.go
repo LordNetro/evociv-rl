@@ -138,6 +138,88 @@ func parseNamePool(m map[string]any) NamePool {
 	return np
 }
 
+// LoadActions loads action definitions from the data registry.
+func LoadActions(registry *data.Registry) ([]ActionDef, error) {
+	raw, ok := data.Get[[]any](registry, "npc-actions")
+	if !ok {
+		return nil, fmt.Errorf("npc-actions not found in registry")
+	}
+
+	var actions []ActionDef
+	for _, item := range raw {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		a := ActionDef{}
+		if v, ok := m["id"].(string); ok {
+			a.ID = v
+		}
+		if v, ok := m["name"].(string); ok {
+			a.Name = v
+		}
+		if v, ok := m["requires"].(map[string]any); ok {
+			a.Requires = parseActionRequires(v)
+		}
+		if v, ok := m["effects"].(map[string]any); ok {
+			a.Effects = parseActionEffects(v)
+		}
+		if v, ok := m["reward"].(map[string]any); ok {
+			a.Reward = parseActionReward(v)
+		}
+		actions = append(actions, a)
+	}
+	return actions, nil
+}
+
+func parseActionRequires(m map[string]any) ActionRequires {
+	r := ActionRequires{}
+	if v, ok := m["biomes"].([]any); ok {
+		for _, b := range v {
+			if bs, ok := b.(string); ok {
+				r.Biomes = append(r.Biomes, bs)
+			}
+		}
+	}
+	if v, ok := m["needs_min"].(map[string]any); ok {
+		r.NeedsMin = parseNeedsValues(v)
+	}
+	if v, ok := m["needs_max"].(map[string]any); ok {
+		r.NeedsMax = parseNeedsValues(v)
+	}
+	return r
+}
+
+func parseActionEffects(m map[string]any) ActionEffects {
+	e := ActionEffects{}
+	if v, ok := toFloat64(m["hunger_change"]); ok {
+		e.HungerChange = v
+	}
+	if v, ok := toFloat64(m["fatigue_change"]); ok {
+		e.FatigueChange = v
+	}
+	return e
+}
+
+func parseActionReward(m map[string]any) ActionReward {
+	r := ActionReward{}
+	if v, ok := toFloat64(m["base"]); ok {
+		r.Base = v
+	}
+	return r
+}
+
+func parseNeedsValues(m map[string]any) NeedsValues {
+	nv := NeedsValues{}
+	if v, ok := toFloat64(m["hunger"]); ok {
+		nv.Hunger = v
+	}
+	if v, ok := toFloat64(m["fatigue"]); ok {
+		nv.Fatigue = v
+	}
+	return nv
+}
+
 func toFloat64(v any) (float64, bool) {
 	switch val := v.(type) {
 	case float64:

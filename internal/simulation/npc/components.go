@@ -53,9 +53,10 @@ type Job struct {
 
 // AIState holds cognitive state for GOAP-ready NPCs.
 type AIState struct {
-	Goals []string
-	Plan  []string
-	Mood  float64
+	Goals         []string
+	Plan          []string
+	Mood          float64
+	CurrentAction string
 }
 
 // Appearance defines how an NPC is rendered on the map.
@@ -69,6 +70,12 @@ type LOD struct {
 	Level int
 }
 
+// Needs represents basic NPC needs: Hunger and Fatigue, each in [0,1].
+type Needs struct {
+	Hunger  float64
+	Fatigue float64
+}
+
 // Component IDs for the NPC component types.
 var (
 	HealthID      = ecs.NewComponentID("npc_health")
@@ -77,6 +84,7 @@ var (
 	AIStateID     = ecs.NewComponentID("npc_aistate")
 	AppearanceID  = ecs.NewComponentID("npc_appearance")
 	LODID         = ecs.NewComponentID("npc_lod")
+	NeedsID       = ecs.NewComponentID("npc_needs")
 )
 
 // RegisterStores registers the six NPC component stores (plus Position and Name)
@@ -90,4 +98,5 @@ func RegisterStores(w *ecs.World) {
 	ecs.RegisterComponentStore[AIState](w, AIStateID, ecs.NewComponentStore[AIState]())
 	ecs.RegisterComponentStore[Appearance](w, AppearanceID, ecs.NewComponentStore[Appearance]())
 	ecs.RegisterComponentStore[LOD](w, LODID, ecs.NewComponentStore[LOD]())
+	ecs.RegisterComponentStore[Needs](w, NeedsID, ecs.NewComponentStore[Needs]())
 }

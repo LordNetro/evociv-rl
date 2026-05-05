@@ -190,3 +190,142 @@ data:
 		}
 	}
 }
+
+func TestLoadActions(t *testing.T) {
+	fsys := fstest.MapFS{
+		"data/actions.yaml": &fstest.MapFile{
+			Data: []byte(`kind: npc-actions
+data:
+  - id: harvest
+    name: Harvest
+    requires:
+      biomes: [plains, forest]
+      needs_min: {hunger: 0.0, fatigue: 0.0}
+      needs_max: {hunger: 1.0, fatigue: 1.0}
+    effects:
+      hunger_change: -0.3
+      fatigue_change: 0.1
+    reward:
+      base: 1.0
+  - id: forage
+    name: Forage
+    requires:
+      needs_min: {hunger: 0.0, fatigue: 0.0}
+      needs_max: {hunger: 1.0, fatigue: 1.0}
+    effects:
+      hunger_change: -0.2
+      fatigue_change: 0.05
+    reward:
+      base: 0.5
+  - id: rest
+    name: Rest
+    requires:
+      needs_min: {hunger: 0.0, fatigue: 0.0}
+      needs_max: {hunger: 1.0, fatigue: 1.0}
+    effects:
+      hunger_change: 0.05
+      fatigue_change: -0.4
+    reward:
+      base: 1.0
+  - id: socialize
+    name: Socialize
+    requires:
+      needs_min: {hunger: 0.0, fatigue: 0.0}
+      needs_max: {hunger: 0.5, fatigue: 0.5}
+    effects:
+      hunger_change: 0.0
+      fatigue_change: 0.0
+    reward:
+      base: 0.3
+  - id: trade
+    name: Trade
+    requires:
+      needs_min: {hunger: 0.0, fatigue: 0.0}
+      needs_max: {hunger: 0.6, fatigue: 0.6}
+    effects:
+      hunger_change: 0.0
+      fatigue_change: 0.0
+    reward:
+      base: 0.4
+  - id: explore
+    name: Explore
+    requires:
+      needs_min: {hunger: 0.0, fatigue: 0.0}
+      needs_max: {hunger: 1.0, fatigue: 1.0}
+    effects:
+      hunger_change: 0.0
+      fatigue_change: 0.1
+    reward:
+      base: 0.2
+`),
+		},
+	}
+
+	loader := data.NewLoader(fsys)
+	registry := data.NewRegistry()
+	if err := loader.LoadAll("data", registry); err != nil {
+		t.Fatalf("load data: %v", err)
+	}
+
+	actions, err := LoadActions(registry)
+	if err != nil {
+		t.Fatalf("LoadActions error: %v", err)
+	}
+	if len(actions) != 6 {
+		t.Fatalf("expected 6 actions, got %d", len(actions))
+	}
+
+	// Verify harvest has biome restriction
+	var harvest *ActionDef
+	for i := range actions {
+		if actions[i].ID == "harvest" {
+			harvest = &actions[i]
+			break
+		}
+	}
+	if harvest == nil {
+		t.Fatal("harvest action not found")
+	}
+	if len(harvest.Requires.Biomes) != 2 {
+		t.Errorf("harvest biomes = %v, want [plains forest]", harvest.Requires.Biomes)
+	}
+
+	// Verify forage has no biome restriction (available anywhere)
+	var forage *ActionDef
+	for i := range actions {
+		if actions[i].ID == "forage" {
+			forage = &actions[i]
+			break
+		}
+	}
+	if forage == nil {
+		t.Fatal("forage action not found")
+	}
+	if len(forage.Requires.Biomes) != 0 {
+		t.Errorf("forage biomes = %v, want empty", forage.Requires.Biomes)
+	}
+}
+
+func TestLoadActionsMissing(t *testing.T) {
+	registry := data.NewRegistry()
+	_, err := LoadActions(registry)
+	if err == nil {
+		t.Error("expected error for missing npc-actions")
+	}
+}
+
+func TestLoadActionsInvalidYAML(t *testing.T) {
+	fsys := fstest.MapFS{
+		"data/actions.yaml": &fstest.MapFile{
+			Data: []byte(`kind: npc-actions
+data: [`),
+		},
+	}
+
+	loader := data.NewLoader(fsys)
+	registry := data.NewRegistry()
+	// Invalid YAML should fail during load
+	if err := loader.LoadAll("data", registry); err == nil {
+		t.Fatal("expected YAML parse error")
+	}
+}

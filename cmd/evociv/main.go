@@ -85,6 +85,10 @@ func run() error {
 	if err != nil {
 		log.Warn("Failed to load NPC roles", "error", err)
 	}
+	actionDefs, err := npc.LoadActions(registry)
+	if err != nil {
+		log.Warn("Failed to load actions", "error", err)
+	}
 
 	// Initialize ECS world
 	ecsWorld := ecs.NewWorld()
@@ -107,13 +111,20 @@ func run() error {
 	}
 
 	// Spawn NPCs and run systems once before TUI starts
-	var renderSys *npc.NPCRenderSystem
-	if worldMap != nil && len(raceDefs) > 0 && len(roleDefs) > 0 {
-		renderSys = npc.NewNPCRenderSystem()
-		ecsWorld.AddSystem(npc.NewNPCSpawnSystem(worldMap, npc.SpawnConfig{}, genConfig.Seed+999, raceDefs, roleDefs))
-		ecsWorld.AddSystem(npc.NewWanderSystem(worldMap, roleDefs, rand.New(rand.NewSource(time.Now().UnixNano()))))
-		ecsWorld.AddSystem(npc.NewLODSystem(func() (int, int) { return 0, 0 }))
-		ecsWorld.AddSystem(renderSys)
+		var renderSys *npc.NPCRenderSystem
+		var qlSys *npc.QLearningSystem
+		if worldMap != nil && len(raceDefs) > 0 && len(roleDefs) > 0 {
+			renderSys = npc.NewNPCRenderSystem()
+			ecsWorld.AddSystem(npc.NewNPCSpawnSystem(worldMap, npc.SpawnConfig{}, genConfig.Seed+999, raceDefs, roleDefs))
+			ecsWorld.AddSystem(npc.NewWanderSystem(worldMap, roleDefs, rand.New(rand.NewSource(time.Now().UnixNano()))))
+			ecsWorld.AddSystem(npc.NewLODSystem(func() (int, int) { return 0, 0 }))
+			ecsWorld.AddSystem(npc.NewNeedsDecaySystem())
+			if len(actionDefs) > 0 {
+				ecsWorld.AddSystem(npc.NewGOAPSystem(worldMap, actionDefs))
+				qlSys = npc.NewQLearningSystem(worldMap, actionDefs, rand.New(rand.NewSource(time.Now().UnixNano())))
+				ecsWorld.AddSystem(qlSys)
+			}
+			ecsWorld.AddSystem(renderSys)
 
 		if err := ecsWorld.Update(0); err != nil {
 			log.Warn("ECS update failed", "error", err)
@@ -142,9 +153,27 @@ func run() error {
 		model.SetNPCOverlay(renderSys.RenderInfos())
 	}
 
+	// Load Q-table from store if available
+	if qlSys != nil && s != nil {
+		data, err := s.LoadQTable(0)
+		if err == nil && len(data) > 0 {
+			qlSys.QTable().LoadValues(data)
+			log.Info("Q-table loaded", "states", len(data))
+		}
+	}
+
 	p := tea.NewProgram(model)
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("tui: %w", err)
+	}
+
+	// Save Q-table after TUI closes
+	if qlSys != nil && s != nil {
+		if err := s.SaveQTable(0, qlSys.QTable().Values()); err != nil {
+			log.Warn("Failed to save Q-table", "error", err)
+		} else {
+			log.Info("Q-table saved")
+		}
 	}
 
 	return nil

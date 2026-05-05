@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/marco/evociv-rl/internal/ecs"
+	"github.com/marco/evociv-rl/internal/simulation/goap"
+	"github.com/marco/evociv-rl/internal/simulation/rl"
 	"github.com/marco/evociv-rl/internal/world"
 )
 
@@ -181,6 +183,286 @@ func chebyshev(x1, y1, x2, y2 int) int {
 		return int(dx)
 	}
 	return int(dy)
+}
+
+// NeedsDecaySystem increases Hunger and Fatigue for all NPCs each tick.
+type NeedsDecaySystem struct{}
+
+// NewNeedsDecaySystem creates a new needs decay system.
+func NewNeedsDecaySystem() *NeedsDecaySystem {
+	return &NeedsDecaySystem{}
+}
+
+// Name returns the system name.
+func (s *NeedsDecaySystem) Name() string { return "NeedsDecaySystem" }
+
+// Update decays needs for all NPCs.
+func (s *NeedsDecaySystem) Update(w *ecs.World, dt float64) error {
+	needsStore, _ := w.GetStore(NeedsID).(*ecs.ComponentStore[Needs])
+	lodStore, _ := w.GetStore(LODID).(*ecs.ComponentStore[LOD])
+	if needsStore == nil || lodStore == nil {
+		return nil
+	}
+
+	for e, needs := range needsStore.All() {
+		lodMul := 1.0
+		if lod, ok := lodStore.Get(e); ok && lod.Level == LODDistant {
+			lodMul = 0.5
+		}
+
+		needs.Hunger += 0.01 * lodMul * dt
+		needs.Fatigue += 0.005 * lodMul * dt
+
+		if needs.Hunger > 1.0 {
+			needs.Hunger = 1.0
+		}
+		if needs.Fatigue > 1.0 {
+			needs.Fatigue = 1.0
+		}
+
+		needsStore.Set(e, needs)
+	}
+	return nil
+}
+
+// GOAPSystem plans actions for NPCs with LOD≥1.
+type GOAPSystem struct {
+	wm      *world.WorldMap
+	actions []ActionDef
+}
+
+// NewGOAPSystem creates a new GOAP planning system.
+func NewGOAPSystem(wm *world.WorldMap, actions []ActionDef) *GOAPSystem {
+	return &GOAPSystem{wm: wm, actions: actions}
+}
+
+// Name returns the system name.
+func (s *GOAPSystem) Name() string { return "GOAPSystem" }
+
+// Update plans actions for eligible NPCs.
+func (s *GOAPSystem) Update(w *ecs.World, dt float64) error {
+	posStore := w.GetStore(ecs.NewComponentID("position")).(*ecs.ComponentStore[ecs.Position])
+	needsStore, _ := w.GetStore(NeedsID).(*ecs.ComponentStore[Needs])
+	lodStore, _ := w.GetStore(LODID).(*ecs.ComponentStore[LOD])
+	aiStore, _ := w.GetStore(AIStateID).(*ecs.ComponentStore[AIState])
+
+	if needsStore == nil || lodStore == nil || aiStore == nil {
+		return nil
+	}
+
+	// Convert npc.ActionDef to goap.Action for planning
+	goapActions := make([]goap.Action, len(s.actions))
+	for i, a := range s.actions {
+		goapActions[i] = goap.Action{
+			ID:            a.ID,
+			Biomes:        a.Requires.Biomes,
+			NeedsMin:      goap.Needs{Hunger: a.Requires.NeedsMin.Hunger, Fatigue: a.Requires.NeedsMin.Fatigue},
+			NeedsMax:      goap.Needs{Hunger: a.Requires.NeedsMax.Hunger, Fatigue: a.Requires.NeedsMax.Fatigue},
+			HungerChange:  a.Effects.HungerChange,
+			FatigueChange: a.Effects.FatigueChange,
+			RewardBase:    a.Reward.Base,
+		}
+	}
+
+	for e, lod := range lodStore.All() {
+		if lod.Level < LODNear {
+			continue
+		}
+		needs, ok := needsStore.Get(e)
+		if !ok {
+			continue
+		}
+		pos, ok := posStore.Get(e)
+		if !ok {
+			continue
+		}
+		ai, ok := aiStore.Get(e)
+		if !ok {
+			continue
+		}
+
+		biome := ""
+		if s.wm != nil {
+			tile := s.wm.TileAt(int(pos.X), int(pos.Y))
+			if tile != nil {
+				biome = tile.BiomeID
+			}
+		}
+
+		gn := goap.Needs{Hunger: needs.Hunger, Fatigue: needs.Fatigue}
+		action := goap.Plan(gn, goapActions, biome)
+
+		ai.CurrentAction = action.ID
+		if lod.Level == LODLocal {
+			// Full plan: set goal
+			ai.Goals = []string{action.ID}
+		} else {
+			// 1-step: clear goals
+			ai.Goals = nil
+		}
+		aiStore.Set(e, ai)
+	}
+	return nil
+}
+
+// QLearningSystem executes actions and updates Q-values for NPCs with LOD≥1.
+type QLearningSystem struct {
+	wm      *world.WorldMap
+	actions []ActionDef
+	qtable  *rl.QTable
+	rng     *rand.Rand
+}
+
+// NewQLearningSystem creates a new Q-learning system.
+func NewQLearningSystem(wm *world.WorldMap, actions []ActionDef, rng *rand.Rand) *QLearningSystem {
+	return &QLearningSystem{
+		wm:      wm,
+		actions: actions,
+		qtable:  rl.NewQTable(),
+		rng:     rng,
+	}
+}
+
+// Name returns the system name.
+func (s *QLearningSystem) Name() string { return "QLearningSystem" }
+
+// QTable exposes the internal Q-table (used for persistence).
+func (s *QLearningSystem) QTable() *rl.QTable {
+	return s.qtable
+}
+
+// Update executes Q-learning for eligible NPCs.
+func (s *QLearningSystem) Update(w *ecs.World, dt float64) error {
+	posStore := w.GetStore(ecs.NewComponentID("position")).(*ecs.ComponentStore[ecs.Position])
+	needsStore, _ := w.GetStore(NeedsID).(*ecs.ComponentStore[Needs])
+	lodStore, _ := w.GetStore(LODID).(*ecs.ComponentStore[LOD])
+	aiStore, _ := w.GetStore(AIStateID).(*ecs.ComponentStore[AIState])
+
+	if needsStore == nil || lodStore == nil || aiStore == nil {
+		return nil
+	}
+
+	for e, lod := range lodStore.All() {
+		if lod.Level < LODNear {
+			continue
+		}
+		needs, ok := needsStore.Get(e)
+		if !ok {
+			continue
+		}
+		pos, ok := posStore.Get(e)
+		if !ok {
+			continue
+		}
+		ai, ok := aiStore.Get(e)
+		if !ok {
+			continue
+		}
+
+		biome := ""
+		if s.wm != nil {
+			tile := s.wm.TileAt(int(pos.X), int(pos.Y))
+			if tile != nil {
+				biome = tile.BiomeID
+			}
+		}
+
+		// Determine state key
+		needType := "none"
+		if needs.Hunger > needs.Fatigue && needs.Hunger > 0.3 {
+			needType = "hunger"
+		} else if needs.Fatigue > needs.Hunger && needs.Fatigue > 0.3 {
+			needType = "fatigue"
+		}
+		state := fmt.Sprintf("%s|%s|day", needType, biome)
+
+		// Filter available actions
+		var available []ActionDef
+		var actionIDs []string
+		for _, a := range s.actions {
+			if !biomeCompatible(biome, a.Requires.Biomes) && len(a.Requires.Biomes) > 0 {
+				continue
+			}
+			if needs.Hunger < a.Requires.NeedsMin.Hunger || needs.Hunger > a.Requires.NeedsMax.Hunger {
+				continue
+			}
+			if needs.Fatigue < a.Requires.NeedsMin.Fatigue || needs.Fatigue > a.Requires.NeedsMax.Fatigue {
+				continue
+			}
+			available = append(available, a)
+			actionIDs = append(actionIDs, a.ID)
+		}
+
+		if len(available) == 0 {
+			continue
+		}
+
+		var selectedAction ActionDef
+		// GOAP fallback when all Q-values are below threshold
+		if s.qtable.ShouldFallback(state, actionIDs, 0.1) {
+			// Use GOAP's recommended action
+			for _, a := range available {
+				if a.ID == ai.CurrentAction {
+					selectedAction = a
+					break
+				}
+			}
+		}
+		if selectedAction.ID == "" {
+			// ε-greedy selection
+			actionID := s.qtable.EGreedy(state, actionIDs, s.qtable.Epsilon(), s.rng)
+			for _, a := range available {
+				if a.ID == actionID {
+					selectedAction = a
+					break
+				}
+			}
+		}
+		if selectedAction.ID == "" {
+			selectedAction = available[0]
+		}
+
+		// Execute action: apply effects
+		oldNeeds := needs
+		needs.Hunger += selectedAction.Effects.HungerChange
+		needs.Fatigue += selectedAction.Effects.FatigueChange
+		needs.Hunger = math.Max(0, math.Min(1, needs.Hunger))
+		needs.Fatigue = math.Max(0, math.Min(1, needs.Fatigue))
+		needsStore.Set(e, needs)
+
+		// Compute reward
+		reward := ComputeReward(oldNeeds, needs, selectedAction)
+
+		// Determine next state
+		nextNeedType := "none"
+		if needs.Hunger > needs.Fatigue && needs.Hunger > 0.3 {
+			nextNeedType = "hunger"
+		} else if needs.Fatigue > needs.Hunger && needs.Fatigue > 0.3 {
+			nextNeedType = "fatigue"
+		}
+		nextState := fmt.Sprintf("%s|%s|day", nextNeedType, biome)
+
+		// Update Q-table
+		s.qtable.Update(state, selectedAction.ID, reward, nextState, 0.1, 0.9)
+		s.qtable.DecayEpsilon()
+
+		ai.CurrentAction = selectedAction.ID
+		aiStore.Set(e, ai)
+	}
+	return nil
+}
+
+// ComputeReward calculates the reward for an action based on needs reduction and base reward.
+func ComputeReward(oldNeeds, newNeeds Needs, action ActionDef) float64 {
+	hungerReduction := oldNeeds.Hunger - newNeeds.Hunger
+	fatigueReduction := oldNeeds.Fatigue - newNeeds.Fatigue
+	if hungerReduction < 0 {
+		hungerReduction = 0
+	}
+	if fatigueReduction < 0 {
+		fatigueReduction = 0
+	}
+	return hungerReduction + fatigueReduction + action.Reward.Base
 }
 
 // NPCRenderSystem collects render information for NPCs with LOD≥1.
