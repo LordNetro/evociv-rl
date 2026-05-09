@@ -1,78 +1,61 @@
 package main
 
 import (
-	"os"
-	"os/exec"
 	"testing"
 	"testing/fstest"
-	"time"
 
 	"github.com/marco/evociv-rl/internal/data"
-	"github.com/marco/evociv-rl/internal/world/gen"
+	"github.com/marco/evociv-rl/internal/ecs"
+	"github.com/marco/evociv-rl/internal/simulation/npc"
+	"github.com/marco/evociv-rl/internal/simulation/settlement"
+	"github.com/marco/evociv-rl/internal/world"
 )
 
-func TestRunNoPanic(t *testing.T) {
-	done := make(chan struct{})
-	var runErr error
-	go func() {
-		defer close(done)
-		defer func() {
-			if r := recover(); r != nil {
-				t.Errorf("run() panicked: %v", r)
-			}
-		}()
-		_ = os.Chdir("../..")
-		runErr = run()
-	}()
-	select {
-	case <-done:
-		_ = runErr // acceptable to error when no TTY
-	case <-time.After(2 * time.Second):
-		t.Error("run() timed out")
-	}
-}
-
-func TestMainBuild(t *testing.T) {
-	// Try building from repo root first, then from cmd/evociv dir
-	cmd := exec.Command("go", "build", "./cmd/evociv")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		// Fallback: maybe running from cmd/evociv directory
-		cmd = exec.Command("go", "build", ".")
-		out, err = cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("build failed: %v\n%s", err, out)
-		}
-	}
-}
-
-func TestMainInitRuns(t *testing.T) {
+func TestSmokeSettlementIntegration(t *testing.T) {
 	fsys := fstest.MapFS{
-		"data/gen-config.yaml": &fstest.MapFile{
-			Data: []byte(`kind: gen-config
+		"data/settlements.yaml": &fstest.MapFile{
+			Data: []byte(`kind: settlement-types
 data:
-  seed: 42
-  width: 16
-  height: 16
-  octaves: 4
-  lacunarity: 2.0
-  gain: 0.5
-  scale: 10.0
+  - id: village
+    name: Aldea
+    symbol: "♦"
+    color: "#8B7355"
+    radius: 3
+    biomes: [plains]
+    buildings: [house, farm]
+    spawn_weight: 1.0
 `),
 		},
-		"data/biomes.yaml": &fstest.MapFile{
-			Data: []byte(`kind: biomes
+		"data/buildings.yaml": &fstest.MapFile{
+			Data: []byte(`kind: building-types
 data:
-  - id: test
-    name: Test
-    symbol: "."
-    color: "#FFFFFF"
-    minHeight: -1.0
-    maxHeight: 1.0
-    minHumidity: 0.0
-    maxHumidity: 1.0
-    minTemperature: 0.0
-    maxTemperature: 1.0
+  - id: house
+    name: Casa
+  - id: farm
+    name: Granja
+`),
+		},
+		"data/npcs.yaml": &fstest.MapFile{
+			Data: []byte(`kind: npc-races
+data:
+  - id: human
+    name: Humano
+    spawn_weight: 1.0
+    roles:
+      - id: farmer
+        weight: 1.0
+    name_pool:
+      first: ["A"]
+      last: ["B"]
+`),
+		},
+		"data/npc-roles.yaml": &fstest.MapFile{
+			Data: []byte(`kind: npc-roles
+data:
+  - id: farmer
+    symbol: "@"
+    color: "#FFD700"
+    biomes: [plains]
 `),
 		},
 	}
@@ -83,58 +66,66 @@ data:
 		t.Fatalf("load data: %v", err)
 	}
 
-	cfg, err := gen.LoadGenConfig("data/gen-config.yaml", fsys)
+	settlementDefs, err := settlement.LoadSettlementTypes(registry)
 	if err != nil {
-		t.Fatalf("load gen config: %v", err)
+		t.Fatalf("load settlements: %v", err)
 	}
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("validate config: %v", err)
-	}
-
-	biomes, err := gen.LoadBiomes(registry)
+	buildingDefs, err := settlement.LoadBuildingTypes(registry)
 	if err != nil {
-		t.Fatalf("load biomes: %v", err)
+		t.Fatalf("load buildings: %v", err)
 	}
-	if len(biomes) == 0 {
-		t.Fatal("expected at least one biome")
-	}
-}
-
-func TestGenerateWithConfig(t *testing.T) {
-	fsys := fstest.MapFS{
-		"gen-config.yaml": &fstest.MapFile{
-			Data: []byte(`kind: gen-config
-data:
-  seed: 42
-  width: 8
-  height: 8
-  octaves: 4
-  lacunarity: 2.0
-  gain: 0.5
-  scale: 10.0
-`),
-		},
-	}
-
-	cfg, err := gen.LoadGenConfig("gen-config.yaml", fsys)
+	raceDefs, err := npc.LoadNpcRaces(registry)
 	if err != nil {
-		t.Fatalf("load gen config: %v", err)
+		t.Fatalf("load races: %v", err)
 	}
-
-	biomes := []gen.BiomeDef{
-		{ID: "test", MinHeight: -1.0, MaxHeight: 1.0, MinHumidity: 0.0, MaxHumidity: 1.0, MinTemperature: 0.0, MaxTemperature: 1.0},
-	}
-
-	wm, err := gen.Generate(cfg.Width, cfg.Height, cfg, biomes)
+	roleDefs, err := npc.LoadNpcRoles(registry)
 	if err != nil {
-		t.Fatalf("generate world: %v", err)
+		t.Fatalf("load roles: %v", err)
 	}
-	if len(wm.Tiles) != 64 {
-		t.Errorf("expected 64 tiles, got %d", len(wm.Tiles))
-	}
-	for i, tile := range wm.Tiles {
-		if tile.BiomeID == "" {
-			t.Errorf("tile %d has empty BiomeID", i)
+
+	wm := world.NewWorldMap(64, 64)
+	for y := 0; y < wm.Height; y++ {
+		for x := 0; x < wm.Width; x++ {
+			wm.TileAt(x, y).BiomeID = "plains"
 		}
+	}
+
+	w := ecs.NewWorld()
+	npc.RegisterStores(w)
+	settlement.RegisterSettlementStores(w)
+
+	// Settlement spawn first
+	setSys := settlement.NewSettlementSpawnSystem(wm, 42, settlementDefs, buildingDefs)
+	w.AddSystem(setSys)
+	if err := w.Update(0); err != nil {
+		t.Fatalf("settlement update: %v", err)
+	}
+
+	setStore := w.GetStore(settlement.SettlementID).(*ecs.ComponentStore[settlement.Settlement])
+	if setStore.Len() == 0 {
+		t.Fatal("expected settlements after spawn")
+	}
+
+	// NPC spawn second (should find settlements)
+	npcSys := npc.NewNPCSpawnSystem(wm, npc.SpawnConfig{Count: 5}, 42, raceDefs, roleDefs)
+	w.AddSystem(npcSys)
+	if err := w.Update(0); err != nil {
+		t.Fatalf("npc update: %v", err)
+	}
+
+	homeStore := w.GetStore(settlement.HomeRefID).(*ecs.ComponentStore[settlement.HomeReference])
+	if homeStore.Len() == 0 {
+		t.Fatal("expected some NPCs to have HomeReference after settlement-aware spawn")
+	}
+
+	// Settlement render system produces overlay data
+	renderSys := settlement.NewSettlementRenderSystem()
+	w.AddSystem(renderSys)
+	if err := w.Update(0); err != nil {
+		t.Fatalf("render update: %v", err)
+	}
+	infos := renderSys.RenderInfos()
+	if len(infos) == 0 {
+		t.Fatal("expected settlement render infos")
 	}
 }

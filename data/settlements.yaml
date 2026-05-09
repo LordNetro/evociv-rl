@@ -1,0 +1,28 @@
+kind: settlement-types
+data:
+  - id: village
+    name: Aldea
+    symbol: "♦"
+    color: "#8B7355"
+    radius: 3
+    biomes: [plains, forest]
+    buildings: [house, farm]
+    spawn_weight: 0.6
+
+  - id: town
+    name: Pueblo
+    symbol: "▲"
+    color: "#B8860B"
+    radius: 5
+    biomes: [plains]
+    buildings: [house, market, tavern, blacksmith, farm]
+    spawn_weight: 0.3
+
+  - id: city
+    name: Ciudad
+    symbol: "●"
+    color: "#DAA520"
+    radius: 8
+    biomes: [plains]
+    buildings: [house, market, temple, tavern, blacksmith, farm]
+    spawn_weight: 0.1

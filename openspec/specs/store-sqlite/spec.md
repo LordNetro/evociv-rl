@@ -54,14 +54,64 @@ The Store interface SHOULD remain minimal (Open, Close) to allow alternative bac
 
 ### Requirement: World Persistence
 
-Store MUST add SaveWorld(seed int64, w, h int) error and LoadLatestWorld() (seed int64, w, h int, error). SQLite stores in worlds table.
+Store MUST add SaveWorld(seed int64, w, h int, npcSeedOffset int64) error and LoadLatestWorld() (seed int64, w, h int, npcSeedOffset int64, error). SQLite stores in worlds table. The `npc_seed_offset` column MUST be persisted so that NPC placement is deterministically reproducible after save/load cycles.
+(Previously: SaveWorld took (seed, w, h) only; LoadLatestWorld returned (seed, w, h) only. No NPC offset column.)
 
-#### Scenario: Save+retrieve
+#### Scenario: Save and retrieve with offset
 - GIVEN opened store
-- WHEN SaveWorld(42,64,64) then LoadLatestWorld()
-- THEN seed=42, width=64, height=64
+- WHEN SaveWorld(42, 64, 64, 999) then LoadLatestWorld()
+- THEN seed=42, width=64, height=64, npcSeedOffset=999
 
 #### Scenario: Empty store
 - GIVEN fresh store, no worlds
 - WHEN LoadLatestWorld()
 - THEN MUST return error
+
+#### Scenario: Deterministic regeneration after save/load
+- GIVEN a world saved with seed=42 and npcSeedOffset=999
+- WHEN the world is loaded and NPC spawning uses those values
+- THEN the NPC set MUST be identical to the original spawn
+
+### Requirement: Q-Table Persistence
+
+The Store interface MUST add `SaveQTable(npcID int, qTable map[string]map[string]float64) error` and `LoadQTable(npcID int) (map[string]map[string]float64, error)`. The SQLite implementation MUST store Q-values in a `qtable` table.
+
+The `qtable` schema MUST be:
+
+```sql
+CREATE TABLE IF NOT EXISTS qtable (
+    npc_id    INTEGER,
+    state_key TEXT,
+    action_id TEXT,
+    q_value   REAL,
+    PRIMARY KEY (npc_id, state_key, action_id)
+);
+```
+
+#### Scenario: Save and load Q-table
+
+- GIVEN an opened store and a Q-table with 3 state-action pairs for NPC 1
+- WHEN SaveQTable(1, data) then LoadQTable(1) are called
+- THEN the loaded data MUST match the saved data exactly for all pairs
+
+#### Scenario: Load empty table returns empty map
+
+- GIVEN an opened store with no rows in qtable
+- WHEN LoadQTable(1) is called
+- THEN an empty map MUST be returned (no error)
+
+#### Scenario: Persistence across open/close cycle
+
+- GIVEN saved Q-values for NPC 1
+- WHEN the store is closed and reopened, then LoadQTable(1) is called
+- THEN the Q-values MUST be recoverable
+
+### Requirement: Save on Exit, Load on Start
+
+The system MUST save the Q-table for each NPC on simulation exit (Close) and load it on simulation start (Open).
+
+#### Scenario: Q-table saved on close
+
+- GIVEN an active simulation with modified Q-values
+- WHEN Close() is called
+- THEN SaveQTable MUST be invoked for each NPC with Q-values
