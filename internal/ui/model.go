@@ -4,6 +4,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/marco/evociv-rl/internal/world"
+	"github.com/marco/evociv-rl/internal/ui/tilemap"
 )
 
 // Model is the Bubbletea model for the Evociv-RL TUI.
@@ -16,6 +17,8 @@ type Model struct {
 	cameraX  int
 	cameraY  int
 	worldMap *world.WorldMap
+	// Tilemap renderer fields (optional - nil when feature flag disabled)
+	tilemapView *tilemap.TilemapView
 }
 
 // NewModel creates a new TUI model.

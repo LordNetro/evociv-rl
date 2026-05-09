@@ -38,7 +38,7 @@ func (t *Tilemap) TileAt(x, y, z int) *Tile {
 
 // SetTile sets the character for a specific layer at (x, y, z).
 // Creates the Z level if it doesn't exist.
-func (t *Tilemap) SetTile(x, y, z int, layer Layer, char byte) {
+func (t *Tilemap) SetTile(x, y, z int, layer Layer, char rune) {
 	// Ensure Z level exists
 	level := t.setZLevel(z)
 	if x < 0 || x >= t.width || y < 0 || y >= t.height {
@@ -93,4 +93,14 @@ func (t *Tilemap) Height() int {
 // Key is the Z level index, value is the 2D tile slice.
 func (t *Tilemap) ZLevels() map[int][][]Tile {
 	return t.levels
+}
+
+// SetFog sets the fog state for a tile at (x, y, z).
+// char should be: ' ' visible, '.' explored, ':' dark/unexplored
+func (t *Tilemap) SetFog(x, y, z int, char rune) {
+	level := t.setZLevel(z)
+	if x < 0 || x >= t.width || y < 0 || y >= t.height {
+		return
+	}
+	level[y][x].Fog = char
 }

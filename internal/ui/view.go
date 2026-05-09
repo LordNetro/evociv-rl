@@ -1,9 +1,13 @@
 package ui
 
 import (
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/marco/evociv-rl/internal/ui/tilemap"
+	"github.com/marco/evociv-rl/internal/world"
 )
 
 var (
@@ -29,6 +33,10 @@ var (
 		PaddingTop(1).
 		Align(lipgloss.Center)
 )
+
+// useTilemapRenderer is the feature flag for tilemap rendering
+// Set RENDER_TILEMAP=true in environment to enable
+var useTilemapRenderer = os.Getenv("RENDER_TILEMAP") == "true"
 
 // biomeStyles maps biome IDs to their display symbol and color.
 var biomeStyles = map[string]struct {
@@ -78,6 +86,18 @@ func renderWelcome(m Model) string {
 }
 
 func renderMap(m Model) string {
+	// If tilemap view is initialized and feature flag enabled, use tilemap renderer
+	if useTilemapRenderer && m.tilemapView != nil {
+		return m.tilemapView.View()
+	}
+
+	// Fall back to existing biomeStyles rendering
+	return renderMapBiome(m)
+}
+
+// renderMapBiome is the original biome-based map renderer
+// This is the fallback when tilemap feature flag is disabled
+func renderMapBiome(m Model) string {
 	if m.worldMap == nil {
 		return lipgloss.Place(m.width, m.height,
 			lipgloss.Center, lipgloss.Center,
@@ -123,4 +143,33 @@ func renderMap(m Model) string {
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+// initTilemapRenderer initializes the tilemap renderer if feature flag is enabled
+// Returns nil if feature flag is disabled
+func initTilemapRenderer(worldMap *world.WorldMap) *tilemap.TilemapView {
+	if !useTilemapRenderer {
+		return nil
+	}
+
+	if worldMap == nil {
+		return nil
+	}
+
+	// Create tilemap from world dimensions
+	tm := tilemap.NewTilemap(worldMap.Width, worldMap.Height)
+
+	// Create camera
+	cam := tilemap.NewCamera(0, 0, 0, 80, 24) // Default viewport size
+
+	// Create and return tilemap view
+	return &tilemap.TilemapView{
+		Tilemap: tm,
+		Camera:  cam,
+	}
+}
+
+// SetTilemapView sets the tilemap view for the model
+func (m *Model) SetTilemapView(tv *tilemap.TilemapView) {
+	m.tilemapView = tv
 }
