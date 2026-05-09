@@ -75,21 +75,11 @@ func GetComponent[T any](w *World, e Entity) (T, bool) {
 
 // RemoveEntity removes an entity and all its components.
 func (w *World) RemoveEntity(e Entity) {
+	// Call Delete on any registered store that implements Delete(Entity).
+	type deleter interface{ Delete(Entity) }
 	for _, store := range w.stores {
-		switch s := store.(type) {
-		case *ComponentStore[Position]:
-			s.Delete(e)
-		case *ComponentStore[Name]:
-			s.Delete(e)
-		case *ComponentStore[Tags]:
-			s.Delete(e)
-		default:
-			// Use reflection to call Delete if the store has a Delete method.
-			v := reflect.ValueOf(store)
-			m := v.MethodByName("Delete")
-			if m.IsValid() {
-				m.Call([]reflect.Value{reflect.ValueOf(e)})
-			}
+		if d, ok := store.(deleter); ok {
+			d.Delete(e)
 		}
 	}
 	for i, ent := range w.entities {
@@ -110,6 +100,11 @@ func (w *World) Entities() []Entity {
 // AddSystem registers a system with the world.
 func (w *World) AddSystem(s System) {
 	w.systems.AddSystem(s)
+}
+
+// Systems returns all registered systems.
+func (w *World) Systems() []System {
+	return w.systems.Systems()
 }
 
 // Update runs all systems with the given delta time.

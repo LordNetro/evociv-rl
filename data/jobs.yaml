@@ -1,0 +1,14 @@
+kind: jobs
+data:
+  - id: farm_work
+    role: farmer
+    action_id: work_inside
+    reward: 1.5
+  - id: harvest_fields
+    role: farmer
+    action_id: harvest
+    reward: 1.0
+  - id: haul_wood
+    role: laborer
+    action_id: explore
+    reward: 0.5

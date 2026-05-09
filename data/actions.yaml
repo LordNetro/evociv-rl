@@ -1,0 +1,93 @@
+kind: npc-actions
+data:
+  - id: harvest
+    name: Harvest
+    requires:
+      biomes: [plains, forest]
+      needs_min: {hunger: 0.0, fatigue: 0.0}
+      needs_max: {hunger: 1.0, fatigue: 1.0}
+    effects:
+      hunger_change: -0.3
+      fatigue_change: 0.1
+    reward:
+      base: 1.0
+  - id: forage
+    name: Forage
+    requires:
+      needs_min: {hunger: 0.0, fatigue: 0.0}
+      needs_max: {hunger: 1.0, fatigue: 1.0}
+    effects:
+      hunger_change: -0.2
+      fatigue_change: 0.05
+    reward:
+      base: 0.5
+  - id: rest
+    name: Rest
+    requires:
+      needs_min: {hunger: 0.0, fatigue: 0.0}
+      needs_max: {hunger: 1.0, fatigue: 1.0}
+    effects:
+      hunger_change: 0.05
+      fatigue_change: -0.4
+    reward:
+      base: 1.0
+  - id: socialize
+    name: Socialize
+    requires:
+      needs_min: {hunger: 0.0, fatigue: 0.0}
+      needs_max: {hunger: 0.5, fatigue: 0.5}
+    effects:
+      hunger_change: 0.0
+      fatigue_change: 0.0
+    reward:
+      base: 0.3
+  - id: trade
+    name: Trade
+    requires:
+      needs_min: {hunger: 0.0, fatigue: 0.0}
+      needs_max: {hunger: 0.6, fatigue: 0.6}
+    effects:
+      hunger_change: 0.0
+      fatigue_change: 0.0
+    reward:
+      base: 0.4
+  - id: explore
+    name: Explore
+    requires:
+      needs_min: {hunger: 0.0, fatigue: 0.0}
+      needs_max: {hunger: 1.0, fatigue: 1.0}
+    effects:
+      hunger_change: 0.0
+      fatigue_change: 0.1
+    reward:
+      base: 0.2
+  - id: enter_building
+    name: Enter Building
+    requires:
+      needs_min: {hunger: 0.0, fatigue: 0.0}
+      needs_max: {hunger: 1.0, fatigue: 1.0}
+    effects:
+      hunger_change: 0.0
+      fatigue_change: 0.0
+    reward:
+      base: 0.5
+  - id: work_inside
+    name: Work Inside
+    requires:
+      needs_min: {hunger: 0.0, fatigue: 0.0}
+      needs_max: {hunger: 0.8, fatigue: 0.8}
+    effects:
+      hunger_change: 0.05
+      fatigue_change: 0.1
+    reward:
+      base: 1.5
+  - id: exit_building
+    name: Exit Building
+    requires:
+      needs_min: {hunger: 0.0, fatigue: 0.0}
+      needs_max: {hunger: 1.0, fatigue: 1.0}
+    effects:
+      hunger_change: 0.0
+      fatigue_change: 0.0
+    reward:
+      base: 0.2

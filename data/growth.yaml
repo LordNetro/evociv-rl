@@ -1,0 +1,14 @@
+kind: growth-thresholds
+data:
+  - level: 2
+    food: 100
+    tools: 10
+    gold: 5
+    new_radius: 4
+    new_buildings: [house, farm]
+  - level: 3
+    food: 500
+    tools: 50
+    gold: 25
+    new_radius: 6
+    new_buildings: [market, tavern, temple]

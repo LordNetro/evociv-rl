@@ -1,0 +1,60 @@
+kind: npc-races
+data:
+  - id: human
+    name: Humano
+    description: "Versatil y adaptable"
+    spawn_weight: 1.0
+    traits:
+      openness:        { mean: 0.5, std: 0.15 }
+      conscientiousness: { mean: 0.5, std: 0.15 }
+      extraversion:    { mean: 0.5, std: 0.15 }
+      agreeableness:   { mean: 0.5, std: 0.15 }
+      neuroticism:     { mean: 0.5, std: 0.15 }
+    roles:
+      - id: farmer
+        weight: 0.4
+      - id: hunter
+        weight: 0.3
+      - id: merchant
+        weight: 0.2
+      - id: artisan
+        weight: 0.1
+    name_pool:
+      first: ["Aldric", "Bran", "Cedric", "Doran", "Elara", "Fina", "Greta"]
+      last:  ["Torres", "Rio", "Piedra", "Valle", "Bosque"]
+  - id: dwarf
+    name: Enano
+    description: "Resistente y habil"
+    spawn_weight: 0.6
+    traits:
+      openness:          { mean: 0.4, std: 0.15 }
+      conscientiousness: { mean: 0.7, std: 0.1 }
+      extraversion:      { mean: 0.3, std: 0.1 }
+      agreeableness:     { mean: 0.5, std: 0.15 }
+      neuroticism:       { mean: 0.4, std: 0.15 }
+    roles:
+      - id: miner
+        weight: 0.6
+      - id: smith
+        weight: 0.4
+    name_pool:
+      first: ["Borin", "Durm", "Gimli", "Kili"]
+      last:  ["Hierro", "Roca", "Martillo"]
+  - id: elf
+    name: Elfo
+    description: "Sabio y sigiloso"
+    spawn_weight: 0.3
+    traits:
+      openness:        { mean: 0.7, std: 0.1 }
+      conscientiousness: { mean: 0.5, std: 0.15 }
+      extraversion:    { mean: 0.4, std: 0.15 }
+      agreeableness:   { mean: 0.5, std: 0.15 }
+      neuroticism:     { mean: 0.3, std: 0.1 }
+    roles:
+      - id: hunter
+        weight: 0.5
+      - id: artisan
+        weight: 0.5
+    name_pool:
+      first: ["Aeris", "Cael", "Elros", "Luthien", "Thael"]
+      last:  ["Bosque", "Luna", "Viento", "Arco"]
