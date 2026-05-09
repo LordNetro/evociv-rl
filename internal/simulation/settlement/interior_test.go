@@ -21,11 +21,6 @@ func TestCellTypeValues(t *testing.T) {
 			t.Errorf("CellDoor should be 2, got %d", CellDoor)
 		}
 	})
-	t.Run("CellForbidden is third", func(t *testing.T) {
-		if CellForbidden != 3 {
-			t.Errorf("CellForbidden should be 3, got %d", CellForbidden)
-		}
-	})
 }
 
 // TestBuildingInteriorCreation verifies BuildingInterior struct creation

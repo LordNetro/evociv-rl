@@ -11,8 +11,6 @@ const (
 	CellWall
 	// CellDoor represents door tiles (entry/exit points).
 	CellDoor
-	// CellForbidden represents areas outside the building footprint.
-	CellForbidden
 )
 
 // DoorPosition represents a door's position in both interior grid coordinates

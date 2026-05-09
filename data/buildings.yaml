@@ -4,6 +4,7 @@ data:
     name: Casa
     interior_symbol: "⌂"
     color: "#8B4513"
+    max_workers: 2
   - id: farm
     name: Granja
     role: farmer
@@ -26,6 +27,7 @@ data:
     name: Taberna
     interior_symbol: "♨"
     color: "#FF6347"
+    max_workers: 2
   - id: temple
     name: Templo
     interior_symbol: "ϟ"
