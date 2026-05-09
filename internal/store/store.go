@@ -6,6 +6,8 @@ type Store interface {
 	Close() error
 	Health() error
 	Path() string
-	SaveWorld(seed int64, width, height int) error
-	LoadLatestWorld() (seed int64, width, height int, err error)
+	SaveWorld(seed int64, width, height int, npcSeedOffset int64) error
+	LoadLatestWorld() (seed int64, width, height int, npcSeedOffset int64, err error)
+	SaveQTable(npcID int, qTable map[string]map[string]float64) error
+	LoadQTable(npcID int) (map[string]map[string]float64, error)
 }
