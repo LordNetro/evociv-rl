@@ -320,79 +320,81 @@ func renderSettlementView(m Model) string {
 		return "No world map"
 	}
 
-	termHeight := m.height - 3 // Leave room for header and status bar
-	termWidth := m.width - 2
-
-	var lines []string
+	// Use stored settlement info
+	setInfo := m.settlementViewInfo
 
 	// Header with settlement info
 	header := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#FFD700")).
 		Bold(true).
-		Render(fmt.Sprintf("[%s] Settlement View", m.screen))
-	lines = append(lines, header)
+		Render(fmt.Sprintf("[SETTLEMENT] %s - Radius: %d", setInfo.Name, 5))
+	lines := []string{header}
 
-	// Get settlement position for centering
-	setInfo := m.findSettlementAt(m.cursorX+m.cameraX, m.cursorY+m.cameraY)
+	termHeight := m.height - 4 // Leave room for header and status bar
+	termWidth := m.width
 
 	// Render the settlement area with terrain + buildings + NPCs
 	for row := 0; row < termHeight; row++ {
 		worldY := m.settlementCameraY + row
-		if worldY >= m.worldMap.Height {
-			lines = append(lines, strings.Repeat(" ", termWidth))
-			continue
-		}
-
 		var line strings.Builder
+
 		for col := 0; col < termWidth; col++ {
 			worldX := m.settlementCameraX + col
-			if worldX >= m.worldMap.Width {
-				line.WriteString(" ")
-				continue
-			}
 
-			// Check for NPC at this position (within settlement radius)
+			// Calculate distance from settlement center
 			dx := worldX - setInfo.WorldX
 			dy := worldY - setInfo.WorldY
-			showChar := "" // empty means show terrain
-			charColor := ""
+			distSq := dx*dx + dy*dy
 
-			if dx*dx+dy*dy <= 25 { // radius 5 squared
+			showChar := ""
+			charColor := ""
+			bold := false
+
+			// Check for NPC at this position (within settlement radius)
+			if distSq <= 25 { // radius 5 squared
 				for _, npcInfo := range m.npcOverlay {
 					if npcInfo.WorldX == worldX && npcInfo.WorldY == worldY {
 						showChar = "@"
 						charColor = string(npcInfo.Color)
+						bold = true
 						break
 					}
 				}
 			}
 
 			// Check for settlement center
-			if showChar == "" && worldX == setInfo.WorldX && worldY == setInfo.WorldY {
+			if showChar == "" && distSq == 0 {
 				showChar = string(setInfo.Symbol)
 				charColor = setInfo.Color
+				bold = true
 			}
 
-			// Check for other settlements
-			if showChar == "" {
-				for _, sinfo := range m.settlementOverlay {
-					if sinfo.WorldX == worldX && sinfo.WorldY == worldY {
-						showChar = string(sinfo.Symbol)
-						charColor = sinfo.Color
-						break
-					}
+			// Check for buildings (simplified: show walls around center)
+			if showChar == "" && distSq <= 9 { // within 3 tiles of center
+				// Show building footprint
+				if distSq == 9 || distSq == 4 || distSq == 1 { // corners and edges
+					showChar = "#"
+					charColor = "#8B7355"
+				} else if distSq <= 8 && distSq > 0 {
+					showChar = "."
+					charColor = "#90EE90"
 				}
 			}
 
 			// If we have a char to show, render it
 			if showChar != "" {
-				if charColor == "" {
-					charColor = "#888888"
+				style := lipgloss.NewStyle().
+					Foreground(lipgloss.Color(charColor))
+				if bold {
+					style = style.Bold(true)
 				}
-				line.WriteString(lipgloss.NewStyle().
-					Foreground(lipgloss.Color(charColor)).
-					Bold(true).
-					Render(showChar))
+				line.WriteString(style.Render(showChar))
+				continue
+			}
+
+			// Out of bounds check
+			if !m.worldMap.InBounds(worldX, worldY) {
+				line.WriteString(" ")
 				continue
 			}
 
@@ -416,7 +418,8 @@ func renderSettlementView(m Model) string {
 	// Footer with controls
 	footer := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#888888")).
-		Render(fmt.Sprintf("[m] Map  [esc/q] Back  | %s | Pop: %d", setInfo.Name, setInfo.Population))
+		Render(fmt.Sprintf("[m] Map  [esc/q] Back  | %s | Pop: %d | Pos: [%d,%d]",
+		setInfo.Name, setInfo.Population, m.settlementCameraX, m.settlementCameraY))
 	lines = append(lines, footer)
 
 	return lipgloss.JoinVertical(lipgloss.Top, lines...)
@@ -424,10 +427,5 @@ func renderSettlementView(m Model) string {
 
 // findSettlementAt finds the settlement at the given world coordinates
 func (m Model) findSettlementAt(wx, wy int) settlement.SettlementRenderInfo {
-	for _, info := range m.settlementOverlay {
-		if info.WorldX == wx && info.WorldY == wy {
-			return info
-		}
-	}
-	return settlement.SettlementRenderInfo{Name: "Unknown", Color: "#888888"}
+	return m.settlementViewInfo
 }

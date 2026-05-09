@@ -38,6 +38,9 @@ type Model struct {
 	// Settlement view state
 	settlementCameraX int
 	settlementCameraY int
+	// Track which settlement entity we're viewing in settlement mode
+	settlementViewEntity ecs.Entity
+	settlementViewInfo settlement.SettlementRenderInfo
 	// Tilemap renderer fields (optional - nil when feature flag disabled)
 	tilemapView *tilemap.TilemapView
 }
@@ -256,6 +259,8 @@ func (m *Model) tryEnterSettlement() {
 		if info.WorldX == wx && info.WorldY == wy {
 			// Found settlement under cursor, enter settlement view
 			m.screen = "settlement"
+			m.settlementViewEntity = ecs.Entity(info.Entity)
+			m.settlementViewInfo = info
 			// Center the settlement camera on the settlement position
 			m.settlementCameraX = info.WorldX - m.width/2
 			m.settlementCameraY = info.WorldY - m.height/2
