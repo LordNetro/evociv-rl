@@ -20,6 +20,11 @@ func NewSettlementEconomySystem(defs []settlement.BuildingDef) *SettlementEconom
 	return &SettlementEconomySystem{buildingDefs: m}
 }
 
+// buildingDefsMap returns the internal map of building definitions.
+func (s *SettlementEconomySystem) buildingDefsMap() map[string]settlement.BuildingDef {
+	return s.buildingDefs
+}
+
 // Name returns the system name.
 func (s *SettlementEconomySystem) Name() string { return "SettlementEconomySystem" }
 
@@ -38,6 +43,14 @@ func (s *SettlementEconomySystem) Update(w *ecs.World, dt float64) error {
 		return nil
 	}
 	resStore, ok := w.GetStore(settlement.ResourceID).(*ecs.ComponentStore[settlement.ResourceStore])
+	if !ok {
+		return nil
+	}
+	buildStore, ok := w.GetStore(settlement.BuildingID).(*ecs.ComponentStore[settlement.Building])
+	if !ok {
+		return nil
+	}
+	interiorStore, ok := w.GetStore(settlement.BuildingInteriorID).(*ecs.ComponentStore[settlement.BuildingInterior])
 	if !ok {
 		return nil
 	}
@@ -62,7 +75,7 @@ func (s *SettlementEconomySystem) Update(w *ecs.World, dt float64) error {
 		workers[home.SettlementEntity][job.Role]++
 	}
 
-	for e, set := range setStore.All() {
+	for e := range setStore.All() {
 		// Lazy-init ResourceStore
 		var rs settlement.ResourceStore
 		if existing, ok := resStore.Get(e); ok {
@@ -71,24 +84,42 @@ func (s *SettlementEconomySystem) Update(w *ecs.World, dt float64) error {
 			rs = settlement.ResourceStore{Resources: map[string]float64{"food": 0, "gold": 0, "tools": 0}}
 		}
 
-		// Process buildings
-		for _, bID := range set.Buildings {
-			def, ok := s.buildingDefs[bID]
+		// Process buildings by iterating over building entities
+		// This uses WorkersInside from BuildingInterior component
+		buildingDefsMap := s.buildingDefsMap()
+		for bEntity, b := range buildStore.All() {
+			// Only process buildings belonging to this settlement
+			if b.SettlementEntity != e {
+				continue
+			}
+
+			def, ok := buildingDefsMap[b.ID]
 			if !ok || len(def.Produces) == 0 {
 				continue
 			}
-			roleWorkers := workers[e][def.Role]
-			if roleWorkers > def.MaxWorkers {
-				roleWorkers = def.MaxWorkers
+
+			// Get workers inside from BuildingInterior component
+			interior, hasInterior := interiorStore.Get(bEntity)
+			var workersInside int
+			if hasInterior {
+				workersInside = interior.WorkersInside
+			} else {
+				// Fallback to role-based workers if no interior (backward compatibility)
+				workersInside = workers[e][def.Role]
 			}
-			if roleWorkers == 0 {
+
+			// Cap at max workers
+			if workersInside > def.MaxWorkers {
+				workersInside = def.MaxWorkers
+			}
+			if workersInside == 0 {
 				continue
 			}
 
 			// Check consumption first
 			canProduce := true
 			for res, rate := range def.Consumes {
-				if !rs.Has(res, rate*float64(roleWorkers)*dt) {
+				if !rs.Has(res, rate*float64(workersInside)*dt) {
 					canProduce = false
 					break
 				}
@@ -99,12 +130,12 @@ func (s *SettlementEconomySystem) Update(w *ecs.World, dt float64) error {
 
 			// Consume
 			for res, rate := range def.Consumes {
-				rs.Remove(res, rate*float64(roleWorkers)*dt)
+				rs.Remove(res, rate*float64(workersInside)*dt)
 			}
 
 			// Produce
 			for res, rate := range def.Produces {
-				rs.Add(res, rate*float64(roleWorkers)*dt)
+				rs.Add(res, rate*float64(workersInside)*dt)
 			}
 		}
 

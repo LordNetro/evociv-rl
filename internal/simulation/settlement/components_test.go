@@ -103,3 +103,32 @@ func TestResourceStoreHas(t *testing.T) {
 		t.Error("expected Has(gold,1) to be false")
 	}
 }
+
+func TestBuildingComponentInteriorFields(t *testing.T) {
+	w := ecs.NewWorld()
+	RegisterSettlementStores(w)
+
+	e := w.NewEntity()
+	ecs.AddComponent(w, e, Building{
+		ID:               "farm",
+		Name:             "Granja",
+		Level:            1,
+		InteriorSymbol:   "╬",
+		Color:            "#DEB887",
+		SettlementEntity: ecs.Entity(7),
+	})
+
+	b, ok := ecs.GetComponent[Building](w, e)
+	if !ok {
+		t.Fatal("expected Building component to exist")
+	}
+	if b.InteriorSymbol != "╬" {
+		t.Errorf("InteriorSymbol = %q, want ╬", b.InteriorSymbol)
+	}
+	if b.Color != "#DEB887" {
+		t.Errorf("Color = %q, want #DEB887", b.Color)
+	}
+	if b.SettlementEntity != ecs.Entity(7) {
+		t.Errorf("SettlementEntity = %d, want 7", b.SettlementEntity)
+	}
+}

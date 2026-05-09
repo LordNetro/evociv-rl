@@ -139,3 +139,22 @@ func TestNeedsClampedAtMax(t *testing.T) {
 		t.Errorf("Fatigue %.2f out of range [0,1]", n.Fatigue)
 	}
 }
+
+func TestAIStateZeroDefaults(t *testing.T) {
+	w := ecs.NewWorld()
+	RegisterStores(w)
+
+	e := w.NewEntity()
+	ecs.AddComponent(w, e, AIState{})
+
+	ai, ok := ecs.GetComponent[AIState](w, e)
+	if !ok {
+		t.Fatal("expected AIState component to exist")
+	}
+	if ai.LastReward != 0.0 {
+		t.Errorf("expected LastReward=0.0, got %f", ai.LastReward)
+	}
+	if ai.RewardTick != 0 {
+		t.Errorf("expected RewardTick=0, got %d", ai.RewardTick)
+	}
+}

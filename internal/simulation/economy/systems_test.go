@@ -34,7 +34,23 @@ func TestEconomySystemFarmProducesFood(t *testing.T) {
 		Buildings: []string{"farm"},
 	})
 
-	// Create 2 farmer NPCs with HomeReference to this settlement
+	// Create building entity with BuildingInterior (2 workers inside)
+	build := w.NewEntity()
+	ecs.AddComponent(w, build, ecs.Position{X: 12, Y: 12})
+	ecs.AddComponent(w, build, settlement.Building{
+		ID:               "farm",
+		Name:             "Granja",
+		SettlementEntity: settle,
+	})
+	ecs.AddComponent(w, build, settlement.BuildingInterior{
+		WorkersInside: 2,
+		MaxWorkers:    3,
+		Grid:          createTestGrid(5, 5),
+		Width:         5,
+		Height:        5,
+	})
+
+	// Create 2 farmer NPCs with HomeReference to this settlement (for fallback)
 	for i := 0; i < 2; i++ {
 		n := w.NewEntity()
 		ecs.AddComponent(w, n, npc.Job{Role: "farmer"})
@@ -53,7 +69,7 @@ func TestEconomySystemFarmProducesFood(t *testing.T) {
 	if !ok {
 		t.Fatal("expected ResourceStore to be created")
 	}
-	// 2 workers * 2.0 food = 4.0 production, 2 NPCs * 0.01 = 0.02 consumption
+	// 2 workers inside * 2.0 food = 4.0 production, 2 NPCs * 0.01 = 0.02 consumption
 	if rs.Resources["food"] != 3.98 {
 		t.Errorf("food = %f, want 3.98", rs.Resources["food"])
 	}
@@ -67,6 +83,22 @@ func TestEconomySystemBlacksmithProducesTools(t *testing.T) {
 	ecs.AddComponent(w, settle, settlement.Settlement{
 		Name: "Testville", Type: "village", Radius: 3,
 		Buildings: []string{"blacksmith"},
+	})
+
+	// Create building entity with BuildingInterior (1 worker inside)
+	build := w.NewEntity()
+	ecs.AddComponent(w, build, ecs.Position{X: 12, Y: 12})
+	ecs.AddComponent(w, build, settlement.Building{
+		ID:               "blacksmith",
+		Name:             "Herreria",
+		SettlementEntity: settle,
+	})
+	ecs.AddComponent(w, build, settlement.BuildingInterior{
+		WorkersInside: 1,
+		MaxWorkers:    2,
+		Grid:          createTestGrid(5, 5),
+		Width:         5,
+		Height:        5,
 	})
 
 	n := w.NewEntity()
@@ -85,6 +117,7 @@ func TestEconomySystemBlacksmithProducesTools(t *testing.T) {
 	if !ok {
 		t.Fatal("expected ResourceStore to be created")
 	}
+	// 1 worker inside * 1.0 tools = 1.0 production
 	if rs.Resources["tools"] != 1.0 {
 		t.Errorf("tools = %f, want 1.0", rs.Resources["tools"])
 	}
@@ -100,6 +133,22 @@ func TestEconomySystemMarketProducesGoldAndConsumesFood(t *testing.T) {
 		Buildings: []string{"market"},
 	})
 	ecs.AddComponent(w, settle, settlement.ResourceStore{Resources: map[string]float64{"food": 10.0}})
+
+	// Create building entity with BuildingInterior (1 worker inside)
+	build := w.NewEntity()
+	ecs.AddComponent(w, build, ecs.Position{X: 12, Y: 12})
+	ecs.AddComponent(w, build, settlement.Building{
+		ID:               "market",
+		Name:             "Mercado",
+		SettlementEntity: settle,
+	})
+	ecs.AddComponent(w, build, settlement.BuildingInterior{
+		WorkersInside: 1,
+		MaxWorkers:    2,
+		Grid:          createTestGrid(5, 5),
+		Width:         5,
+		Height:        5,
+	})
 
 	n := w.NewEntity()
 	ecs.AddComponent(w, n, npc.Job{Role: "merchant"})
@@ -192,7 +241,24 @@ func TestEconomySystemMaxWorkersCap(t *testing.T) {
 		Buildings: []string{"farm"},
 	})
 
-	// 5 farmers, max_workers=2
+	// Create building entity with BuildingInterior (5 workers inside, but max 2)
+	// This tests that production is capped at MaxWorkers
+	build := w.NewEntity()
+	ecs.AddComponent(w, build, ecs.Position{X: 12, Y: 12})
+	ecs.AddComponent(w, build, settlement.Building{
+		ID:               "farm",
+		Name:             "Granja",
+		SettlementEntity: settle,
+	})
+	ecs.AddComponent(w, build, settlement.BuildingInterior{
+		WorkersInside: 5, // More than max
+		MaxWorkers:    2, // Should be capped
+		Grid:          createTestGrid(5, 5),
+		Width:         5,
+		Height:        5,
+	})
+
+	// 5 farmers (for fallback and NPC consumption)
 	for i := 0; i < 5; i++ {
 		n := w.NewEntity()
 		ecs.AddComponent(w, n, npc.Job{Role: "farmer"})
@@ -211,7 +277,7 @@ func TestEconomySystemMaxWorkersCap(t *testing.T) {
 	if !ok {
 		t.Fatal("expected ResourceStore")
 	}
-	// 2 workers * 2.0 = 4.0 production, 5 NPCs * 0.01 = 0.05 consumption
+	// 2 workers (capped) * 2.0 = 4.0 production, 5 NPCs * 0.01 = 0.05 consumption
 	if rs.Resources["food"] != 3.95 {
 		t.Errorf("food = %f, want 3.95", rs.Resources["food"])
 	}
@@ -581,5 +647,173 @@ func TestEconomySystemLazyInitResourceStore(t *testing.T) {
 	}
 	if rs.Resources["food"] != 0.0 || rs.Resources["gold"] != 0.0 || rs.Resources["tools"] != 0.0 {
 		t.Errorf("expected zeroed default resources, got %v", rs.Resources)
+	}
+}
+
+// TestProductionFormulaWorkersInside tests the production formula using WorkersInside from BuildingInterior.
+// Production = base_output * workers_inside * dt
+func TestProductionFormulaWorkersInside(t *testing.T) {
+	tests := []struct {
+		name           string
+		workersInside  int
+		maxWorkers     int
+		baseOutput     float64
+		dt             float64
+		expectedOutput float64
+	}{
+		{
+			name:           "0 workers -> 0 output",
+			workersInside:  0,
+			maxWorkers:     2,
+			baseOutput:     2.0,
+			dt:             1.0,
+			expectedOutput: 0.0,
+		},
+		{
+			name:           "1 worker -> base output",
+			workersInside:  1,
+			maxWorkers:     2,
+			baseOutput:     2.0,
+			dt:             1.0,
+			expectedOutput: 2.0,
+		},
+		{
+			name:           "2 workers -> 2x base output",
+			workersInside:  2,
+			maxWorkers:     2,
+			baseOutput:     2.0,
+			dt:             1.0,
+			expectedOutput: 4.0,
+		},
+		{
+			name:           "capped at max workers",
+			workersInside:  5,
+			maxWorkers:     2,
+			baseOutput:     2.0,
+			dt:             1.0,
+			expectedOutput: 4.0, // capped at maxWorkers
+		},
+		{
+			name:           "with fractional dt",
+			workersInside:  1,
+			maxWorkers:     2,
+			baseOutput:     2.0,
+			dt:             0.5,
+			expectedOutput: 1.0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := setupWorld(t)
+
+			// Create settlement
+			settle := w.NewEntity()
+			ecs.AddComponent(w, settle, ecs.Position{X: 10, Y: 10})
+			ecs.AddComponent(w, settle, settlement.Settlement{
+				Name: "Testville", Type: "village", Radius: 3,
+			})
+
+			// Create building entity with BuildingInterior
+			build := w.NewEntity()
+			ecs.AddComponent(w, build, ecs.Position{X: 12, Y: 12})
+			ecs.AddComponent(w, build, settlement.Building{
+				ID:               "farm",
+				Name:             "Granja",
+				SettlementEntity: settle,
+			})
+			ecs.AddComponent(w, build, settlement.BuildingInterior{
+				WorkersInside: tt.workersInside,
+				MaxWorkers:    tt.maxWorkers,
+				Grid:          createTestGrid(5, 5),
+				Width:         5,
+				Height:        5,
+			})
+
+			defs := []settlement.BuildingDef{
+				{ID: "farm", Name: "Granja", Role: "farmer", Produces: map[string]float64{"food": tt.baseOutput}, MaxWorkers: tt.maxWorkers},
+			}
+			sys := NewSettlementEconomySystem(defs)
+			if err := sys.Update(w, tt.dt); err != nil {
+				t.Fatalf("Update error: %v", err)
+			}
+
+			rs, ok := ecs.GetComponent[settlement.ResourceStore](w, settle)
+			if !ok {
+				t.Fatal("expected ResourceStore to be created")
+			}
+
+			actual := rs.Resources["food"]
+			// Allow small floating point tolerance
+			diff := actual - tt.expectedOutput
+			if diff < 0 {
+				diff = -diff
+			}
+			if diff > 0.001 {
+				t.Errorf("food = %f, want %f", actual, tt.expectedOutput)
+			}
+		})
+	}
+}
+
+// createTestGrid creates a simple test grid with floor tiles.
+func createTestGrid(width, height int) [][]settlement.CellType {
+	grid := make([][]settlement.CellType, height)
+	for y := 0; y < height; y++ {
+		grid[y] = make([]settlement.CellType, width)
+		for x := 0; x < width; x++ {
+			if x == 0 || x == width-1 || y == 0 || y == height-1 {
+				grid[y][x] = settlement.CellWall
+			} else {
+				grid[y][x] = settlement.CellFloor
+			}
+		}
+	}
+	return grid
+}
+
+// TestProductionFormulaWorkersInsideAndRoleFallback tests that role-based workers
+// are used as fallback when BuildingInterior is not present (backward compatibility).
+func TestProductionFormulaWorkersInsideAndRoleFallback(t *testing.T) {
+	w := setupWorld(t)
+
+	// Create settlement
+	settle := w.NewEntity()
+	ecs.AddComponent(w, settle, ecs.Position{X: 10, Y: 10})
+	ecs.AddComponent(w, settle, settlement.Settlement{
+		Name: "Testville", Type: "village", Radius: 3,
+	})
+
+	// Create building WITHOUT BuildingInterior (backward compatibility scenario)
+	build := w.NewEntity()
+	ecs.AddComponent(w, build, ecs.Position{X: 12, Y: 12})
+	ecs.AddComponent(w, build, settlement.Building{
+		ID:               "farm",
+		Name:             "Granja",
+		SettlementEntity: settle,
+	})
+
+	// Create farmer NPC with job (role-based worker)
+	farmer := w.NewEntity()
+	ecs.AddComponent(w, farmer, npc.Job{Role: "farmer"})
+	ecs.AddComponent(w, farmer, settlement.HomeReference{SettlementEntity: settle})
+
+	defs := []settlement.BuildingDef{
+		{ID: "farm", Name: "Granja", Role: "farmer", Produces: map[string]float64{"food": 2.0}, MaxWorkers: 3},
+	}
+	sys := NewSettlementEconomySystem(defs)
+	if err := sys.Update(w, 1.0); err != nil {
+		t.Fatalf("Update error: %v", err)
+	}
+
+	rs, ok := ecs.GetComponent[settlement.ResourceStore](w, settle)
+	if !ok {
+		t.Fatal("expected ResourceStore to be created")
+	}
+
+	// 1 role-based worker * 2.0 food = 2.0 production
+	// minus 0.01 food consumption for 1 NPC = 1.99 net
+	if rs.Resources["food"] < 1.98 || rs.Resources["food"] > 2.0 {
+		t.Errorf("food = %f, want ~1.99 (2.0 production - 0.01 consumption)", rs.Resources["food"])
 	}
 }

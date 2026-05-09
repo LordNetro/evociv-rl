@@ -283,3 +283,189 @@ func TestSettlementSpawnSystemRunsOnce(t *testing.T) {
 		t.Errorf("expected same count after second tick, got %d vs %d", count1, count2)
 	}
 }
+
+func TestBuildingRenderSystemCollectsBuildings(t *testing.T) {
+	w := ecs.NewWorld()
+	ecs.RegisterComponentStore[ecs.Position](w, ecs.NewComponentID("position"), ecs.NewComponentStore[ecs.Position]())
+	RegisterSettlementStores(w)
+
+	e := w.NewEntity()
+	ecs.AddComponent(w, e, ecs.Position{X: 10, Y: 20})
+	ecs.AddComponent(w, e, Building{ID: "farm", Name: "Granja", InteriorSymbol: "╬", Color: "#DEB887", SettlementEntity: ecs.Entity(1)})
+
+	defs := []BuildingDef{
+		{ID: "farm", Name: "Granja", Role: "farmer", MaxWorkers: 3, Produces: map[string]float64{"food": 2.0}},
+	}
+	sys := NewBuildingRenderSystem(defs)
+	w.AddSystem(sys)
+	if err := w.Update(0); err != nil {
+		t.Fatalf("Update error: %v", err)
+	}
+
+	infos := sys.RenderInfos()
+	if len(infos) != 1 {
+		t.Fatalf("expected 1 render info, got %d", len(infos))
+	}
+	if infos[0].ID != "farm" {
+		t.Errorf("ID = %q, want farm", infos[0].ID)
+	}
+	if infos[0].Symbol != '╬' {
+		t.Errorf("Symbol = %q, want ╬", infos[0].Symbol)
+	}
+	if infos[0].Color != "#DEB887" {
+		t.Errorf("Color = %q, want #DEB887", infos[0].Color)
+	}
+	if infos[0].WorldX != 10 || infos[0].WorldY != 20 {
+		t.Errorf("position = (%d,%d), want (10,20)", infos[0].WorldX, infos[0].WorldY)
+	}
+	if infos[0].Role != "farmer" {
+		t.Errorf("Role = %q, want farmer", infos[0].Role)
+	}
+	if infos[0].MaxWorkers != 3 {
+		t.Errorf("MaxWorkers = %d, want 3", infos[0].MaxWorkers)
+	}
+	if len(infos[0].Produces) != 1 || infos[0].Produces["food"] != 2.0 {
+		t.Errorf("Produces = %v, want map[food:2.0]", infos[0].Produces)
+	}
+	if len(infos[0].Consumes) != 0 {
+		t.Errorf("Consumes = %v, want empty", infos[0].Consumes)
+	}
+}
+
+func TestBuildingRenderSystemCollectsProducesAndConsumes(t *testing.T) {
+	w := ecs.NewWorld()
+	ecs.RegisterComponentStore[ecs.Position](w, ecs.NewComponentID("position"), ecs.NewComponentStore[ecs.Position]())
+	RegisterSettlementStores(w)
+
+	e := w.NewEntity()
+	ecs.AddComponent(w, e, ecs.Position{X: 10, Y: 20})
+	ecs.AddComponent(w, e, Building{ID: "market", Name: "Mercado", InteriorSymbol: "§", Color: "#FFD700", SettlementEntity: ecs.Entity(1)})
+
+	defs := []BuildingDef{
+		{ID: "market", Name: "Mercado", Role: "merchant", MaxWorkers: 2, Produces: map[string]float64{"gold": 1.0}, Consumes: map[string]float64{"food": 0.5}},
+	}
+	sys := NewBuildingRenderSystem(defs)
+	w.AddSystem(sys)
+	if err := w.Update(0); err != nil {
+		t.Fatalf("Update error: %v", err)
+	}
+
+	infos := sys.RenderInfos()
+	if len(infos) != 1 {
+		t.Fatalf("expected 1 render info, got %d", len(infos))
+	}
+	if len(infos[0].Produces) != 1 || infos[0].Produces["gold"] != 1.0 {
+		t.Errorf("Produces = %v, want map[gold:1.0]", infos[0].Produces)
+	}
+	if len(infos[0].Consumes) != 1 || infos[0].Consumes["food"] != 0.5 {
+		t.Errorf("Consumes = %v, want map[food:0.5]", infos[0].Consumes)
+	}
+}
+
+func TestBuildingRenderSystemSkipsZeroSymbol(t *testing.T) {
+	w := ecs.NewWorld()
+	ecs.RegisterComponentStore[ecs.Position](w, ecs.NewComponentID("position"), ecs.NewComponentStore[ecs.Position]())
+	RegisterSettlementStores(w)
+
+	e := w.NewEntity()
+	ecs.AddComponent(w, e, ecs.Position{X: 10, Y: 20})
+	ecs.AddComponent(w, e, Building{ID: "farm", Name: "Granja", InteriorSymbol: ""})
+
+	sys := NewBuildingRenderSystem(nil)
+	w.AddSystem(sys)
+	if err := w.Update(0); err != nil {
+		t.Fatalf("Update error: %v", err)
+	}
+
+	infos := sys.RenderInfos()
+	if len(infos) != 0 {
+		t.Errorf("expected 0 render info for zero-symbol building, got %d", len(infos))
+	}
+}
+
+func TestBuildingRenderSystemRenderInfosForSettlement(t *testing.T) {
+	w := ecs.NewWorld()
+	ecs.RegisterComponentStore[ecs.Position](w, ecs.NewComponentID("position"), ecs.NewComponentStore[ecs.Position]())
+	RegisterSettlementStores(w)
+
+	settlementEntity := ecs.Entity(1)
+
+	e1 := w.NewEntity()
+	ecs.AddComponent(w, e1, ecs.Position{X: 10, Y: 20})
+	ecs.AddComponent(w, e1, Building{ID: "farm", Name: "Granja", InteriorSymbol: "╬", Color: "#DEB887", SettlementEntity: settlementEntity})
+
+	e2 := w.NewEntity()
+	ecs.AddComponent(w, e2, ecs.Position{X: 30, Y: 40})
+	ecs.AddComponent(w, e2, Building{ID: "house", Name: "Casa", InteriorSymbol: "⌂", Color: "#8B4513", SettlementEntity: ecs.Entity(2)})
+
+	sys := NewBuildingRenderSystem(nil)
+	w.AddSystem(sys)
+	if err := w.Update(0); err != nil {
+		t.Fatalf("Update error: %v", err)
+	}
+
+	filtered := sys.RenderInfosForSettlement(w, settlementEntity)
+	if len(filtered) != 1 {
+		t.Fatalf("expected 1 filtered render info, got %d", len(filtered))
+	}
+	if filtered[0].Entity != e1 {
+		t.Errorf("expected entity %d, got %d", e1, filtered[0].Entity)
+	}
+}
+
+func TestSettlementSpawnSystemCopiesInteriorFields(t *testing.T) {
+	wm := makeBiomeWorld("plains", 256, 256)
+	w := ecs.NewWorld()
+	ecs.RegisterComponentStore[ecs.Position](w, ecs.NewComponentID("position"), ecs.NewComponentStore[ecs.Position]())
+	ecs.RegisterComponentStore[ecs.Name](w, ecs.NewComponentID("name"), ecs.NewComponentStore[ecs.Name]())
+	RegisterSettlementStores(w)
+
+	settlementDefs := []SettlementDef{
+		{ID: "village", Name: "Aldea", Symbol: "♦", Color: "#8B7355", Radius: 3, Biomes: []string{"plains"}, Buildings: []string{"house", "farm"}, SpawnWeight: 1.0},
+	}
+	buildingDefs := []BuildingDef{
+		{ID: "house", Name: "Casa", InteriorSymbol: "⌂", Color: "#8B4513"},
+		{ID: "farm", Name: "Granja", InteriorSymbol: "╬", Color: "#DEB887", Role: "farmer", MaxWorkers: 3},
+	}
+
+	sys := NewSettlementSpawnSystem(wm, 42, settlementDefs, buildingDefs)
+	w.AddSystem(sys)
+	_ = w.Update(0)
+
+	buildStore, _ := w.GetStore(BuildingID).(*ecs.ComponentStore[Building])
+	if buildStore == nil {
+		t.Fatal("expected Building store")
+	}
+
+	foundHouse := false
+	foundFarm := false
+	for _, b := range buildStore.All() {
+		if b.ID == "house" {
+			foundHouse = true
+			if b.InteriorSymbol != "⌂" {
+				t.Errorf("house InteriorSymbol = %q, want ⌂", b.InteriorSymbol)
+			}
+			if b.Color != "#8B4513" {
+				t.Errorf("house Color = %q, want #8B4513", b.Color)
+			}
+			if b.SettlementEntity == 0 {
+				t.Error("expected house SettlementEntity to be set")
+			}
+		}
+		if b.ID == "farm" {
+			foundFarm = true
+			if b.InteriorSymbol != "╬" {
+				t.Errorf("farm InteriorSymbol = %q, want ╬", b.InteriorSymbol)
+			}
+			if b.Color != "#DEB887" {
+				t.Errorf("farm Color = %q, want #DEB887", b.Color)
+			}
+		}
+	}
+	if !foundHouse {
+		t.Error("expected at least one house building")
+	}
+	if !foundFarm {
+		t.Error("expected at least one farm building")
+	}
+}

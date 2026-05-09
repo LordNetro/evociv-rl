@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/marco/evociv-rl/internal/ecs"
+	"github.com/marco/evociv-rl/internal/simulation/settlement"
 	"github.com/marco/evociv-rl/internal/world"
 )
 
@@ -591,5 +592,298 @@ func TestIntegrationLOD0SkipsGOAPAndQL(t *testing.T) {
 	}
 	if ai.CurrentAction != "" {
 		t.Error("expected no action at LOD0")
+	}
+}
+
+func TestQLearningSystemWritesLastReward(t *testing.T) {
+	wm := makeTestWorldMap("plains", 10, 10)
+	w := ecs.NewWorld()
+	RegisterStores(w)
+
+	e := w.NewEntity()
+	ecs.AddComponent(w, e, ecs.Position{X: 5, Y: 5})
+	ecs.AddComponent(w, e, Needs{Hunger: 0.8, Fatigue: 0.1})
+	ecs.AddComponent(w, e, AIState{CurrentAction: "harvest"})
+	ecs.AddComponent(w, e, LOD{Level: LODLocal})
+
+	actions := []ActionDef{
+		{ID: "harvest", Name: "Harvest", Requires: ActionRequires{Biomes: []string{"plains"}, NeedsMin: NeedsValues{Hunger: 0, Fatigue: 0}, NeedsMax: NeedsValues{Hunger: 1, Fatigue: 1}}, Effects: ActionEffects{HungerChange: -0.3}, Reward: ActionReward{Base: 1.0}},
+	}
+
+	qt := NewTestQLearningSystem(wm, actions)
+	w.AddSystem(qt)
+
+	if err := w.Update(1.0); err != nil {
+		t.Fatalf("Update error: %v", err)
+	}
+
+	ai, ok := ecs.GetComponent[AIState](w, e)
+	if !ok {
+		t.Fatal("expected AIState component")
+	}
+	if ai.LastReward <= 0 {
+		t.Errorf("expected LastReward > 0 after Q-learning, got %f", ai.LastReward)
+	}
+	if ai.RewardTick == 0 {
+		t.Error("expected RewardTick to be set")
+	}
+}
+
+func TestNPCRenderSystemIncludesRewardAndRole(t *testing.T) {
+	w := ecs.NewWorld()
+	RegisterStores(w)
+
+	e := w.NewEntity()
+	ecs.AddComponent(w, e, ecs.Position{X: 1, Y: 2})
+	ecs.AddComponent(w, e, Appearance{Symbol: '@'})
+	ecs.AddComponent(w, e, LOD{Level: LODLocal})
+	ecs.AddComponent(w, e, AIState{LastReward: 0.87, RewardTick: 42})
+	ecs.AddComponent(w, e, Job{Role: "farmer"})
+
+	sys := NewNPCRenderSystem()
+	w.AddSystem(sys)
+	if err := w.Update(0); err != nil {
+		t.Fatalf("Update error: %v", err)
+	}
+
+	infos := sys.RenderInfos()
+	if len(infos) != 1 {
+		t.Fatalf("expected 1 render info, got %d", len(infos))
+	}
+	if infos[0].LastReward != 0.87 {
+		t.Errorf("LastReward = %f, want 0.87", infos[0].LastReward)
+	}
+	if infos[0].RewardTick != 42 {
+		t.Errorf("RewardTick = %d, want 42", infos[0].RewardTick)
+	}
+	if infos[0].JobRole != "farmer" {
+		t.Errorf("JobRole = %q, want farmer", infos[0].JobRole)
+	}
+}
+
+func TestNPCRenderSystemZeroRewardWithoutAIState(t *testing.T) {
+	w := ecs.NewWorld()
+	RegisterStores(w)
+
+	e := w.NewEntity()
+	ecs.AddComponent(w, e, ecs.Position{X: 1, Y: 2})
+	ecs.AddComponent(w, e, Appearance{Symbol: '@'})
+	ecs.AddComponent(w, e, LOD{Level: LODLocal})
+	ecs.AddComponent(w, e, Job{Role: "merchant"})
+	// No AIState component
+
+	sys := NewNPCRenderSystem()
+	w.AddSystem(sys)
+	if err := w.Update(0); err != nil {
+		t.Fatalf("Update error: %v", err)
+	}
+
+	infos := sys.RenderInfos()
+	if len(infos) != 1 {
+		t.Fatalf("expected 1 render info, got %d", len(infos))
+	}
+	if infos[0].LastReward != 0.0 {
+		t.Errorf("LastReward = %f, want 0.0", infos[0].LastReward)
+	}
+	if infos[0].RewardTick != 0 {
+		t.Errorf("RewardTick = %d, want 0", infos[0].RewardTick)
+	}
+	if infos[0].JobRole != "merchant" {
+		t.Errorf("JobRole = %q, want merchant", infos[0].JobRole)
+	}
+}
+
+func TestNPCRenderSystemRenderInfosForSettlement(t *testing.T) {
+	w := ecs.NewWorld()
+	RegisterStores(w)
+	settlement.RegisterSettlementStores(w)
+
+	settlementEntity := w.NewEntity()
+	ecs.AddComponent(w, settlementEntity, settlement.Settlement{Name: "Aldea"})
+
+	e1 := w.NewEntity()
+	ecs.AddComponent(w, e1, ecs.Position{X: 1, Y: 2})
+	ecs.AddComponent(w, e1, Appearance{Symbol: '@'})
+	ecs.AddComponent(w, e1, LOD{Level: LODLocal})
+	ecs.AddComponent(w, e1, settlement.HomeReference{SettlementEntity: settlementEntity})
+
+	e2 := w.NewEntity()
+	ecs.AddComponent(w, e2, ecs.Position{X: 3, Y: 4})
+	ecs.AddComponent(w, e2, Appearance{Symbol: '#'})
+	ecs.AddComponent(w, e2, LOD{Level: LODLocal})
+	// No HomeReference — should not appear
+
+	sys := NewNPCRenderSystem()
+	w.AddSystem(sys)
+	if err := w.Update(0); err != nil {
+		t.Fatalf("Update error: %v", err)
+	}
+
+	filtered := sys.RenderInfosForSettlement(w, settlementEntity)
+	if len(filtered) != 1 {
+		t.Fatalf("expected 1 filtered render info, got %d", len(filtered))
+	}
+	if filtered[0].Entity != e1 {
+		t.Errorf("expected entity %d, got %d", e1, filtered[0].Entity)
+	}
+}
+
+// TestBuildingActionsWorkerCount verifies that enter_building increments WorkersInside
+// and exit_building decrements WorkersInside.
+func TestBuildingActionsWorkerCount(t *testing.T) {
+	wm := makeTestWorldMap("plains", 50, 50)
+	w := ecs.NewWorld()
+	RegisterStores(w)
+
+	// Register settlement stores (required for building actions)
+	settlement.RegisterSettlementStores(w)
+
+	// Create a building with BuildingInterior
+	buildingEntity := w.NewEntity()
+	ecs.AddComponent(w, buildingEntity, ecs.Position{X: 10, Y: 10})
+	ecs.AddComponent(w, buildingEntity, settlement.Building{ID: "house", Name: "Casa"})
+	ecs.AddComponent(w, buildingEntity, settlement.BuildingInterior{
+		Width:         5,
+		Height:        5,
+		WorkersInside: 0,
+		MaxWorkers:    2,
+		BuildingSeed:   12345,
+	})
+
+	// Create a worker NPC
+	worker := w.NewEntity()
+	ecs.AddComponent(w, worker, ecs.Position{X: 12, Y: 12})
+	ecs.AddComponent(w, worker, Needs{Hunger: 0.5, Fatigue: 0.5})
+	ecs.AddComponent(w, worker, AIState{CurrentAction: "enter_building", InsideBuilding: 0})
+	ecs.AddComponent(w, worker, LOD{Level: LODLocal})
+
+	// Create worker action (similar to actions.yaml)
+	buildingActions := []ActionDef{
+		{ID: "enter_building", Name: "Enter Building", Requires: ActionRequires{NeedsMin: NeedsValues{Hunger: 0, Fatigue: 0}, NeedsMax: NeedsValues{Hunger: 1, Fatigue: 1}}, Effects: ActionEffects{HungerChange: 0}, Reward: ActionReward{Base: 0.5}},
+		{ID: "work_inside", Name: "Work Inside", Requires: ActionRequires{NeedsMin: NeedsValues{Hunger: 0, Fatigue: 0}, NeedsMax: NeedsValues{Hunger: 0.8, Fatigue: 0.8}}, Effects: ActionEffects{HungerChange: 0.05}, Reward: ActionReward{Base: 1.5}},
+		{ID: "exit_building", Name: "Exit Building", Requires: ActionRequires{NeedsMin: NeedsValues{Hunger: 0, Fatigue: 0}, NeedsMax: NeedsValues{Hunger: 1, Fatigue: 1}}, Effects: ActionEffects{HungerChange: 0}, Reward: ActionReward{Base: 0.2}},
+	}
+
+	qlSys := NewQLearningSystem(wm, buildingActions, rand.New(rand.NewSource(42)))
+	w.AddSystem(qlSys)
+
+	// Verify initial state
+	bi, ok := ecs.GetComponent[settlement.BuildingInterior](w, buildingEntity)
+	if !ok {
+		t.Fatal("expected BuildingInterior component")
+	}
+	if bi.WorkersInside != 0 {
+		t.Errorf("expected WorkersInside=0 initially, got %d", bi.WorkersInside)
+	}
+
+	// Execute enter_building action
+	if err := w.Update(0.2); err != nil {
+		t.Fatalf("Update error: %v", err)
+	}
+
+	// Verify WorkersInside incremented
+	bi, ok = ecs.GetComponent[settlement.BuildingInterior](w, buildingEntity)
+	if !ok {
+		t.Fatal("expected BuildingInterior component after update")
+	}
+	if bi.WorkersInside != 1 {
+		t.Errorf("expected WorkersInside=1 after enter, got %d", bi.WorkersInside)
+	}
+
+	// Verify AIState updated
+	ai, ok := ecs.GetComponent[AIState](w, worker)
+	if !ok {
+		t.Fatal("expected AIState component")
+	}
+	if ai.InsideBuilding != buildingEntity {
+		t.Errorf("expected InsideBuilding=%d, got %d", buildingEntity, ai.InsideBuilding)
+	}
+
+	// Execute work_inside (should keep WorkersInside at 1)
+	ai.CurrentAction = "work_inside"
+	ecs.AddComponent(w, worker, ai)
+	if err := w.Update(0.2); err != nil {
+		t.Fatalf("Update error: %v", err)
+	}
+	bi, ok = ecs.GetComponent[settlement.BuildingInterior](w, buildingEntity)
+	if !ok {
+		t.Fatal("expected BuildingInterior component after work_inside")
+	}
+	if bi.WorkersInside != 1 {
+		t.Errorf("expected WorkersInside=1 after work_inside, got %d", bi.WorkersInside)
+	}
+
+	// Execute exit_building
+	ai, _ = ecs.GetComponent[AIState](w, worker)
+	ai.CurrentAction = "exit_building"
+	ecs.AddComponent(w, worker, ai)
+	if err := w.Update(0.2); err != nil {
+		t.Fatalf("Update error: %v", err)
+	}
+
+	// Verify WorkersInside decremented
+	bi, ok = ecs.GetComponent[settlement.BuildingInterior](w, buildingEntity)
+	if !ok {
+		t.Fatal("expected BuildingInterior component after exit")
+	}
+	if bi.WorkersInside != 0 {
+		t.Errorf("expected WorkersInside=0 after exit, got %d", bi.WorkersInside)
+	}
+
+	// Verify AIState cleared
+	ai, ok = ecs.GetComponent[AIState](w, worker)
+	if !ok {
+		t.Fatal("expected AIState component after exit")
+	}
+	if ai.InsideBuilding != 0 {
+		t.Errorf("expected InsideBuilding=0 after exit, got %d", ai.InsideBuilding)
+	}
+}
+
+// TestBuildingActionsCapacityCap verifies that WorkersInside is capped at MaxWorkers.
+func TestBuildingActionsCapacityCap(t *testing.T) {
+	wm := makeTestWorldMap("plains", 50, 50)
+	w := ecs.NewWorld()
+	RegisterStores(w)
+	settlement.RegisterSettlementStores(w)
+
+	// Create a building with MaxWorkers=1
+	buildingEntity := w.NewEntity()
+	ecs.AddComponent(w, buildingEntity, ecs.Position{X: 10, Y: 10})
+	ecs.AddComponent(w, buildingEntity, settlement.Building{ID: "house", Name: "Casa"})
+	ecs.AddComponent(w, buildingEntity, settlement.BuildingInterior{
+		Width:         5,
+		Height:        5,
+		WorkersInside: 1, // Already at capacity
+		MaxWorkers:    1,
+		BuildingSeed:   12345,
+	})
+
+	// Create a worker NPC
+	worker := w.NewEntity()
+	ecs.AddComponent(w, worker, ecs.Position{X: 12, Y: 12})
+	ecs.AddComponent(w, worker, Needs{Hunger: 0.5, Fatigue: 0.5})
+	ecs.AddComponent(w, worker, AIState{CurrentAction: "enter_building", InsideBuilding: 0})
+	ecs.AddComponent(w, worker, LOD{Level: LODLocal})
+
+	buildingActions := []ActionDef{
+		{ID: "enter_building", Name: "Enter Building", Requires: ActionRequires{NeedsMin: NeedsValues{Hunger: 0, Fatigue: 0}, NeedsMax: NeedsValues{Hunger: 1, Fatigue: 1}}, Effects: ActionEffects{HungerChange: 0}, Reward: ActionReward{Base: 0.5}},
+	}
+
+	qlSys := NewQLearningSystem(wm, buildingActions, rand.New(rand.NewSource(42)))
+	w.AddSystem(qlSys)
+
+	// Execute enter_building (should be blocked by capacity)
+	if err := w.Update(0.2); err != nil {
+		t.Fatalf("Update error: %v", err)
+	}
+
+	// Verify WorkersInside stayed at 1 (capacity cap)
+	bi, ok := ecs.GetComponent[settlement.BuildingInterior](w, buildingEntity)
+	if !ok {
+		t.Fatal("expected BuildingInterior component")
+	}
+	if bi.WorkersInside != 1 {
+		t.Errorf("expected WorkersInside=1 (capacity capped), got %d", bi.WorkersInside)
 	}
 }

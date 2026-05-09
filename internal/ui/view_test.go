@@ -557,3 +557,256 @@ func TestRenderInspectorFamineWarning(t *testing.T) {
 		t.Errorf("inspector missing famine warning, got: %s", panel)
 	}
 }
+
+func TestRenderSettlementViewShowsBuilding(t *testing.T) {
+	wm := world.NewWorldMap(10, 10)
+	for y := 0; y < wm.Height; y++ {
+		for x := 0; x < wm.Width; x++ {
+			wm.TileAt(x, y).BiomeID = "plains"
+		}
+	}
+	m := NewModel()
+	m.SetWorldMap(wm)
+	m.screen = "settlement"
+	m.width = 80
+	m.height = 24
+	m.ready = true
+	m.settlementViewState = &SettlementViewState{
+		SettlementEntity:  ecs.Entity(1),
+		SettlementCenterX: 5,
+		SettlementCenterY: 5,
+		CursorX:           3,
+		CursorY:           3,
+		ViewportRadius:    3,
+	}
+	m.settlementBuildings = []settlement.BuildingRenderInfo{
+		{Entity: ecs.Entity(10), WorldX: 5, WorldY: 5, Symbol: '╬', Color: "#DEB887", Name: "Granja", ID: "farm"},
+	}
+
+	v := m.View()
+	if !strings.Contains(v, "╬") {
+		t.Error("settlement view should contain building symbol")
+	}
+}
+
+func TestRenderSettlementViewNPCOverBuilding(t *testing.T) {
+	wm := world.NewWorldMap(10, 10)
+	for y := 0; y < wm.Height; y++ {
+		for x := 0; x < wm.Width; x++ {
+			wm.TileAt(x, y).BiomeID = "plains"
+		}
+	}
+	m := NewModel()
+	m.SetWorldMap(wm)
+	m.screen = "settlement"
+	m.width = 80
+	m.height = 24
+	m.ready = true
+	m.settlementViewState = &SettlementViewState{
+		SettlementEntity:  ecs.Entity(1),
+		SettlementCenterX: 5,
+		SettlementCenterY: 5,
+		CursorX:           3,
+		CursorY:           3,
+		ViewportRadius:    3,
+	}
+	m.settlementBuildings = []settlement.BuildingRenderInfo{
+		{Entity: ecs.Entity(10), WorldX: 5, WorldY: 5, Symbol: '╬', Color: "#DEB887", Name: "Granja", ID: "farm"},
+	}
+	m.settlementNPCs = []npc.NPCRenderInfo{
+		{Entity: ecs.Entity(20), WorldX: 5, WorldY: 5, Symbol: '@', Color: lipgloss.Color("#FF0000")},
+	}
+
+	v := m.View()
+	// NPC has priority over building at the same position
+	if !strings.Contains(v, "@") {
+		t.Error("settlement view should contain NPC symbol")
+	}
+	// Building symbol should NOT appear since NPC overlays it
+	if strings.Contains(v, "╬") {
+		t.Error("settlement view should NOT contain building symbol when NPC is at same position")
+	}
+}
+
+func TestRenderSettlementViewRewardPopup(t *testing.T) {
+	wm := world.NewWorldMap(10, 10)
+	for y := 0; y < wm.Height; y++ {
+		for x := 0; x < wm.Width; x++ {
+			wm.TileAt(x, y).BiomeID = "plains"
+		}
+	}
+	m := NewModel()
+	m.SetWorldMap(wm)
+	m.screen = "settlement"
+	m.width = 80
+	m.height = 24
+	m.ready = true
+	m.settlementViewState = &SettlementViewState{
+		SettlementEntity:  ecs.Entity(1),
+		SettlementCenterX: 5,
+		SettlementCenterY: 5,
+		CursorX:           3,
+		CursorY:           3,
+		ViewportRadius:    3,
+	}
+	m.settlementNPCs = []npc.NPCRenderInfo{
+		{Entity: ecs.Entity(20), WorldX: 5, WorldY: 5, Symbol: '@', Color: lipgloss.Color("#FF0000"), LastReward: 0.87, RewardTick: 1},
+	}
+	m.rewardPopups = []RewardPopup{
+		{WorldX: 5, WorldY: 5, Text: "+0.87", TicksLeft: 3},
+	}
+
+	v := m.View()
+	if !strings.Contains(v, "+0.87") {
+		t.Error("settlement view should contain reward popup text")
+	}
+}
+
+func TestRenderSettlementViewStatusBar(t *testing.T) {
+	wm := world.NewWorldMap(10, 10)
+	for y := 0; y < wm.Height; y++ {
+		for x := 0; x < wm.Width; x++ {
+			wm.TileAt(x, y).BiomeID = "plains"
+		}
+	}
+	m := NewModel()
+	m.SetWorldMap(wm)
+	m.screen = "settlement"
+	m.width = 80
+	m.height = 24
+	m.ready = true
+	m.settlementViewState = &SettlementViewState{
+		SettlementEntity:  ecs.Entity(1),
+		SettlementCenterX: 5,
+		SettlementCenterY: 5,
+		CursorX:           3,
+		CursorY:           3,
+		ViewportRadius:    3,
+	}
+	m.settlementBuildings = []settlement.BuildingRenderInfo{
+		{Entity: ecs.Entity(10), WorldX: 5, WorldY: 5, Symbol: '╬', Color: "#DEB887", Name: "Granja", ID: "farm"},
+	}
+
+	v := m.View()
+	// Status bar should show cursor position and building name
+	if !strings.Contains(v, "Granja") {
+		t.Error("status bar should show building name")
+	}
+}
+
+func TestRenderBuildingInspector(t *testing.T) {
+	w := ecs.NewWorld()
+	settlement.RegisterSettlementStores(w)
+
+	be := w.NewEntity()
+	ecs.AddComponent(w, be, settlement.Building{
+		ID: "farm", Name: "Granja", Level: 1,
+		InteriorSymbol: "╬", Color: "#DEB887",
+		SettlementEntity: ecs.Entity(1),
+	})
+
+	m := NewModel()
+	m.screen = "settlement"
+	m.inspectorOpen = true
+	m.selectedBuilding = int(be)
+	m.ecsWorld = w
+	m.settlementBuildings = []settlement.BuildingRenderInfo{
+		{Entity: be, ID: "farm", Name: "Granja", Level: 1, Role: "farmer", MaxWorkers: 3, Symbol: '╬', Color: "#DEB887", Produces: map[string]float64{"food": 2.0}},
+	}
+	m.settlementNPCs = []npc.NPCRenderInfo{
+		{Entity: ecs.Entity(20), JobRole: "farmer", LastReward: 0.5},
+	}
+
+	panel := renderBuildingInspector(m)
+	if panel == "" {
+		t.Fatal("expected non-empty building inspector")
+	}
+	if !strings.Contains(panel, "Granja") {
+		t.Error("inspector missing building name")
+	}
+	if !strings.Contains(panel, "farmer") {
+		t.Error("inspector missing role")
+	}
+	if !strings.Contains(panel, "1/3") {
+		t.Errorf("expected worker count 1/3, got: %s", panel)
+	}
+	if !strings.Contains(panel, "Produces:") {
+		t.Error("inspector missing Produces")
+	}
+	if !strings.Contains(panel, "food +2.0/tick/worker") {
+		t.Errorf("inspector missing food production rate, got: %s", panel)
+	}
+	if !strings.Contains(panel, "Consumes: (none)") {
+		t.Errorf("inspector missing Consumes: (none), got: %s", panel)
+	}
+}
+
+func TestRenderSettlementNPCInspector(t *testing.T) {
+	w := ecs.NewWorld()
+	npc.RegisterStores(w)
+	settlement.RegisterSettlementStores(w)
+
+	se := w.NewEntity()
+	ecs.AddComponent(w, se, settlement.Settlement{Name: "Aldea Verde"})
+	ecs.AddComponent(w, se, ecs.Name{Name: "Aldea Verde"})
+
+	ne := w.NewEntity()
+	ecs.AddComponent(w, ne, ecs.Name{Name: "Gorim"})
+	ecs.AddComponent(w, ne, npc.Health{Current: 80, Max: 100})
+	ecs.AddComponent(w, ne, npc.Job{Role: "farmer"})
+	ecs.AddComponent(w, ne, npc.AIState{LastReward: 0.87, CurrentAction: "harvest"})
+	ecs.AddComponent(w, ne, settlement.HomeReference{SettlementEntity: se})
+
+	m := NewModel()
+	m.screen = "settlement"
+	m.inspectorOpen = true
+	m.selectedNPC = ne
+	m.ecsWorld = w
+
+	panel := renderSettlementNPCInspector(m)
+	if panel == "" {
+		t.Fatal("expected non-empty NPC inspector")
+	}
+	if !strings.Contains(panel, "Gorim") {
+		t.Error("inspector missing NPC name")
+	}
+	if !strings.Contains(panel, "farmer") {
+		t.Error("inspector missing role")
+	}
+	if !strings.Contains(panel, "80/100") {
+		t.Error("inspector missing health")
+	}
+	if !strings.Contains(panel, "0.87") {
+		t.Error("inspector missing last reward")
+	}
+}
+
+func TestRenderSettlementViewClipsToTerminalHeight(t *testing.T) {
+	wm := world.NewWorldMap(10, 10)
+	for y := 0; y < wm.Height; y++ {
+		for x := 0; x < wm.Width; x++ {
+			wm.TileAt(x, y).BiomeID = "plains"
+		}
+	}
+	m := NewModel()
+	m.SetWorldMap(wm)
+	m.screen = "settlement"
+	m.width = 80
+	m.height = 5 // smaller than 7x7 viewport
+	m.ready = true
+	m.settlementViewState = &SettlementViewState{
+		SettlementEntity:  ecs.Entity(1),
+		SettlementCenterX: 5,
+		SettlementCenterY: 5,
+		CursorX:           3,
+		CursorY:           3,
+		ViewportRadius:    3,
+	}
+
+	v := m.View()
+	lines := strings.Split(v, "\n")
+	// Should not exceed terminal height
+	if len(lines) > m.height {
+		t.Errorf("expected at most %d lines, got %d", m.height, len(lines))
+	}
+}

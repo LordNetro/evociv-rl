@@ -8,6 +8,10 @@ import (
 	"github.com/marco/evociv-rl/internal/world"
 )
 
+// DefaultBuildingSeed is the base seed for building interior generation.
+// Each building gets a unique seed based on its world position.
+var DefaultBuildingSeed int64 = 12345
+
 // SettlementSpawnSystem spawns settlements once on the first tick.
 type SettlementSpawnSystem struct {
 	spawned        bool
@@ -97,6 +101,12 @@ func (s *SettlementSpawnSystem) Update(w *ecs.World, dt float64) error {
 
 		settlementPositions = append(settlementPositions, ecs.Position{X: float64(sx), Y: float64(sy)})
 
+		// Build a lookup for building definitions
+		buildDefMap := make(map[string]BuildingDef)
+		for _, bd := range s.buildingDefs {
+			buildDefMap[bd.ID] = bd
+		}
+
 		// Spawn buildings
 		for _, bID := range setType.Buildings {
 			bx := sx - setType.Radius + buildingRNG.Intn(setType.Radius*2+1)
@@ -106,7 +116,29 @@ func (s *SettlementSpawnSystem) Update(w *ecs.World, dt float64) error {
 			}
 			be := w.NewEntity()
 			ecs.AddComponent(w, be, ecs.Position{X: float64(bx), Y: float64(by)})
-			ecs.AddComponent(w, be, Building{ID: bID, Name: buildingName(bID), Level: 1})
+			b := Building{ID: bID, Name: buildingName(bID), Level: 1, SettlementEntity: e}
+			maxWorkers := 2 // default
+			if bd, ok := buildDefMap[bID]; ok {
+				b.InteriorSymbol = bd.InteriorSymbol
+				b.Color = bd.Color
+				maxWorkers = bd.MaxWorkers
+				if maxWorkers <= 0 {
+					maxWorkers = 2
+				}
+			}
+			ecs.AddComponent(w, be, b)
+
+			// Generate interior using InteriorGenerator
+			interiorSeed := DefaultBuildingSeed + int64(bx)*1000 + int64(by)
+			interior := DefaultInteriorGenerator.Generate(interiorSeed, bID, 5, 5)
+			interior.WorkersInside = 0
+			interior.MaxWorkers = maxWorkers
+			// Set door world positions based on building position
+			for i := range interior.Doors {
+				interior.Doors[i].WorldX = bx + interior.Doors[i].GridX - interior.Width/2
+				interior.Doors[i].WorldY = by + interior.Doors[i].GridY - interior.Height/2
+			}
+			ecs.AddComponent(w, be, interior)
 		}
 	}
 
@@ -284,4 +316,95 @@ func (s *SettlementRenderSystem) Update(w *ecs.World, dt float64) error {
 // RenderInfos returns the render information gathered in the last Update.
 func (s *SettlementRenderSystem) RenderInfos() []SettlementRenderInfo {
 	return s.renderInfos
+}
+
+// BuildingRenderSystem collects render information for buildings.
+type BuildingRenderSystem struct {
+	renderInfos  []BuildingRenderInfo
+	buildingDefs map[string]BuildingDef
+}
+
+// NewBuildingRenderSystem creates a render system.
+func NewBuildingRenderSystem(defs []BuildingDef) *BuildingRenderSystem {
+	m := make(map[string]BuildingDef)
+	for _, d := range defs {
+		m[d.ID] = d
+	}
+	return &BuildingRenderSystem{buildingDefs: m}
+}
+
+// Name returns the system name.
+func (s *BuildingRenderSystem) Name() string { return "BuildingRenderSystem" }
+
+// Update gathers renderable buildings.
+func (s *BuildingRenderSystem) Update(w *ecs.World, dt float64) error {
+	s.renderInfos = nil
+	posStore := w.GetStore(ecs.NewComponentID("position")).(*ecs.ComponentStore[ecs.Position])
+	buildStore, _ := w.GetStore(BuildingID).(*ecs.ComponentStore[Building])
+	interiorStore, _ := w.GetStore(BuildingInteriorID).(*ecs.ComponentStore[BuildingInterior])
+	if buildStore == nil {
+		return nil
+	}
+
+	for e, b := range buildStore.All() {
+		if b.InteriorSymbol == "" {
+			continue
+		}
+		pos, ok := posStore.Get(e)
+		if !ok {
+			continue
+		}
+		info := BuildingRenderInfo{
+			Entity:           e,
+			Symbol:           []rune(b.InteriorSymbol)[0],
+			Color:            b.Color,
+			Name:             b.Name,
+			ID:               b.ID,
+			Level:            b.Level,
+			WorldX:           int(pos.X),
+			WorldY:           int(pos.Y),
+			SettlementEntity: b.SettlementEntity,
+			WorkersInside:    0, // default
+		}
+		// Get WorkersInside from BuildingInterior if available
+		if interiorStore != nil {
+			if interior, ok := interiorStore.Get(e); ok {
+				info.WorkersInside = interior.WorkersInside
+			}
+		}
+		if def, ok := s.buildingDefs[b.ID]; ok {
+			info.Role = def.Role
+			info.MaxWorkers = def.MaxWorkers
+			if len(def.Produces) > 0 {
+				info.Produces = make(map[string]float64, len(def.Produces))
+				for k, v := range def.Produces {
+					info.Produces[k] = v
+				}
+			}
+			if len(def.Consumes) > 0 {
+				info.Consumes = make(map[string]float64, len(def.Consumes))
+				for k, v := range def.Consumes {
+					info.Consumes[k] = v
+				}
+			}
+		}
+		s.renderInfos = append(s.renderInfos, info)
+	}
+	return nil
+}
+
+// RenderInfos returns the render information gathered in the last Update.
+func (s *BuildingRenderSystem) RenderInfos() []BuildingRenderInfo {
+	return s.renderInfos
+}
+
+// RenderInfosForSettlement returns buildings whose SettlementEntity matches the given entity.
+func (s *BuildingRenderSystem) RenderInfosForSettlement(w *ecs.World, entity ecs.Entity) []BuildingRenderInfo {
+	var result []BuildingRenderInfo
+	for _, info := range s.renderInfos {
+		if info.SettlementEntity == entity {
+			result = append(result, info)
+		}
+	}
+	return result
 }

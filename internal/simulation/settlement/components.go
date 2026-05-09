@@ -18,9 +18,12 @@ type Settlement struct {
 
 // Building represents a building within a settlement.
 type Building struct {
-	ID    string // "house" | "farm" | "market" | "tavern" | "temple" | "blacksmith"
-	Name  string
-	Level int // 1-3, MVP siempre 1
+	ID               string // "house" | "farm" | "market" | "tavern" | "temple" | "blacksmith"
+	Name             string
+	Level            int        // 1-3, MVP siempre 1
+	InteriorSymbol   string     // copied from BuildingDef on spawn
+	Color            string     // copied from BuildingDef on spawn
+	SettlementEntity ecs.Entity // set during spawn
 }
 
 // HomeReference links an NPC to their home settlement.
@@ -64,17 +67,19 @@ func (rs *ResourceStore) Has(resource string, amount float64) bool {
 
 // Component IDs for the settlement component types.
 var (
-	SettlementID = ecs.NewComponentID("settlement")
-	BuildingID   = ecs.NewComponentID("building")
-	HomeRefID    = ecs.NewComponentID("home_reference")
-	ResourceID   = ecs.NewComponentID("resource_store")
+	SettlementID         = ecs.NewComponentID("settlement")
+	BuildingID           = ecs.NewComponentID("building")
+	HomeRefID            = ecs.NewComponentID("home_reference")
+	ResourceID           = ecs.NewComponentID("resource_store")
+	BuildingInteriorID   = ecs.NewComponentID("building_interior")
 )
 
-// RegisterSettlementStores registers the four settlement component stores
+// RegisterSettlementStores registers the settlement component stores
 // on the given world.
 func RegisterSettlementStores(w *ecs.World) {
 	ecs.RegisterComponentStore[Settlement](w, SettlementID, ecs.NewComponentStore[Settlement]())
 	ecs.RegisterComponentStore[Building](w, BuildingID, ecs.NewComponentStore[Building]())
 	ecs.RegisterComponentStore[HomeReference](w, HomeRefID, ecs.NewComponentStore[HomeReference]())
 	ecs.RegisterComponentStore[ResourceStore](w, ResourceID, ecs.NewComponentStore[ResourceStore]())
+	ecs.RegisterComponentStore[BuildingInterior](w, BuildingInteriorID, ecs.NewComponentStore[BuildingInterior]())
 }

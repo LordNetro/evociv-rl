@@ -57,6 +57,9 @@ type AIState struct {
 	Plan          []string
 	Mood          float64
 	CurrentAction string
+	LastReward    float64 // set after ComputeReward() in QLearningSystem
+	RewardTick    int     // simulation tick when LastReward was set
+	InsideBuilding ecs.Entity // 0 if outside, building entity ID if inside
 }
 
 // Appearance defines how an NPC is rendered on the map.

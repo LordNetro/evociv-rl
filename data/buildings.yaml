@@ -2,15 +2,21 @@ kind: building-types
 data:
   - id: house
     name: Casa
+    interior_symbol: "⌂"
+    color: "#8B4513"
   - id: farm
     name: Granja
     role: farmer
+    interior_symbol: "╬"
+    color: "#DEB887"
     produces:
       food: 2.0
     max_workers: 3
   - id: market
     name: Mercado
     role: merchant
+    interior_symbol: "§"
+    color: "#FFD700"
     produces:
       gold: 1.0
     consumes:
@@ -18,11 +24,17 @@ data:
     max_workers: 2
   - id: tavern
     name: Taberna
+    interior_symbol: "♨"
+    color: "#FF6347"
   - id: temple
     name: Templo
+    interior_symbol: "ϟ"
+    color: "#E6E6FA"
   - id: blacksmith
     name: Herreria
     role: smith
+    interior_symbol: "⚒"
+    color: "#A0522D"
     produces:
       tools: 1.0
     max_workers: 2

@@ -87,4 +87,7 @@ type NPCRenderInfo struct {
 	Symbol         rune
 	Color          lipgloss.Color
 	WorldX, WorldY int
+	LastReward     float64
+	RewardTick     int
+	JobRole        string
 }

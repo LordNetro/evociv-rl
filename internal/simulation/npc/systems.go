@@ -148,12 +148,26 @@ func (s *WanderSystem) Update(w *ecs.World, dt float64) error {
 
 // LODSystem updates the LOD component based on Chebyshev distance to the player.
 type LODSystem struct {
-	playerPos func() (int, int)
+	playerPos       func() (int, int)
+	settlementBoost map[ecs.Entity]bool // entities to keep at LODLocal regardless of distance
 }
 
 // NewLODSystem creates an LOD system.
 func NewLODSystem(playerPos func() (int, int)) *LODSystem {
-	return &LODSystem{playerPos: playerPos}
+	return &LODSystem{playerPos: playerPos, settlementBoost: make(map[ecs.Entity]bool)}
+}
+
+// SetSettlementBoost marks an entity to keep LODLocal regardless of distance from player.
+func (s *LODSystem) SetSettlementBoost(e ecs.Entity) {
+	if s.settlementBoost == nil {
+		s.settlementBoost = make(map[ecs.Entity]bool)
+	}
+	s.settlementBoost[e] = true
+}
+
+// ClearSettlementBoost removes all settlement LOD overrides.
+func (s *LODSystem) ClearSettlementBoost() {
+	s.settlementBoost = make(map[ecs.Entity]bool)
 }
 
 // Name returns the system name.
@@ -170,6 +184,10 @@ func (s *LODSystem) Update(w *ecs.World, dt float64) error {
 
 	for e, pos := range posStore.All() {
 		if !lodStore.Has(e) {
+			continue
+		}
+		// Never downgrade settlement-boosted entities
+		if s.settlementBoost[e] {
 			continue
 		}
 		dist := chebyshev(int(pos.X), int(pos.Y), px, py)
@@ -322,6 +340,7 @@ type QLearningSystem struct {
 	actions []ActionDef
 	qtable  *rl.QTable
 	rng     *rand.Rand
+	tick    int
 }
 
 // NewQLearningSystem creates a new Q-learning system.
@@ -344,6 +363,7 @@ func (s *QLearningSystem) QTable() *rl.QTable {
 
 // Update executes Q-learning for eligible NPCs.
 func (s *QLearningSystem) Update(w *ecs.World, dt float64) error {
+	s.tick++
 	posStore := w.GetStore(ecs.NewComponentID("position")).(*ecs.ComponentStore[ecs.Position])
 	needsStore, _ := w.GetStore(NeedsID).(*ecs.ComponentStore[Needs])
 	lodStore, _ := w.GetStore(LODID).(*ecs.ComponentStore[LOD])
@@ -441,8 +461,17 @@ func (s *QLearningSystem) Update(w *ecs.World, dt float64) error {
 		needs.Fatigue = math.Max(0, math.Min(1, needs.Fatigue))
 		needsStore.Set(e, needs)
 
+		// Execute building actions
+		s.executeBuildingAction(w, e, &ai, selectedAction.ID, pos)
+
 		// Compute reward
 		reward := ComputeReward(oldNeeds, needs, selectedAction)
+
+		// Store reward on AIState
+		if reward > 0.01 || reward < -0.01 {
+			ai.LastReward = reward
+			ai.RewardTick = s.tick
+		}
 
 		// Determine next state
 		nextNeedType := "none"
@@ -476,6 +505,89 @@ func ComputeReward(oldNeeds, newNeeds Needs, action ActionDef) float64 {
 	return hungerReduction + fatigueReduction + action.Reward.Base
 }
 
+// executeBuildingAction handles enter_building, work_inside, exit_building actions.
+// It modifies BuildingInterior.WorkersInside when NPCs enter or exit buildings.
+func (s *QLearningSystem) executeBuildingAction(w *ecs.World, npcEntity ecs.Entity, ai *AIState, actionID string, npcPos ecs.Position) {
+	// Check if settlement stores exist before attempting to use them
+	buildingStoreInterface := w.GetStore(settlement.BuildingID)
+	interiorStoreInterface := w.GetStore(settlement.BuildingInteriorID)
+	if buildingStoreInterface == nil || interiorStoreInterface == nil {
+		return // Settlement systems not initialized, skip building actions
+	}
+
+	buildingStore := buildingStoreInterface.(*ecs.ComponentStore[settlement.Building])
+	interiorStore := interiorStoreInterface.(*ecs.ComponentStore[settlement.BuildingInterior])
+
+	switch actionID {
+	case "enter_building":
+		// Find nearest building with available capacity
+		var targetBuilding ecs.Entity
+		var targetInterior *settlement.BuildingInterior
+
+		for entity := range buildingStore.All() {
+			interior, ok := interiorStore.Get(entity)
+			if !ok {
+				continue
+			}
+			// Check if building has capacity
+			if interior.WorkersInside >= interior.MaxWorkers {
+				continue
+			}
+			// Check if already inside a building
+			if ai.InsideBuilding != 0 {
+				continue
+			}
+			// Get building position
+			posStore := w.GetStore(ecs.NewComponentID("position")).(*ecs.ComponentStore[ecs.Position])
+			bPos, ok := posStore.Get(entity)
+			if !ok {
+				continue
+			}
+			// Simple distance check (could use pathfinding for better results)
+			dx := int(npcPos.X) - int(bPos.X)
+			dy := int(npcPos.Y) - int(bPos.Y)
+			dist := dx*dx + dy*dy
+			// For now, just pick the first available building
+			// TODO: use pathfinding to find nearest
+			_ = dist // silence unused warning for now
+			if targetBuilding == 0 {
+				targetBuilding = entity
+				targetInterior = &interior
+			}
+		}
+
+		if targetBuilding != 0 && targetInterior != nil {
+			// Increment WorkersInside
+			targetInterior.WorkersInside++
+			interiorStore.Set(targetBuilding, *targetInterior)
+			// Mark NPC as inside this building
+			ai.InsideBuilding = targetBuilding
+		}
+
+	case "work_inside":
+		// Worker stays inside, already tracked by WorkersInside
+		// Could add productivity effects here
+		if ai.InsideBuilding != 0 {
+			// Worker is working, nothing to change in WorkersInside
+			_ = ai // silence unused warning
+		}
+
+	case "exit_building":
+		if ai.InsideBuilding != 0 {
+			interior, ok := interiorStore.Get(ai.InsideBuilding)
+			if ok {
+				// Decrement WorkersInside
+				if interior.WorkersInside > 0 {
+					interior.WorkersInside--
+				}
+				interiorStore.Set(ai.InsideBuilding, interior)
+			}
+			// Mark NPC as outside
+			ai.InsideBuilding = 0
+		}
+	}
+}
+
 // NPCRenderSystem collects render information for NPCs with LOD≥1.
 type NPCRenderSystem struct {
 	renderInfos []NPCRenderInfo
@@ -495,6 +607,8 @@ func (s *NPCRenderSystem) Update(w *ecs.World, dt float64) error {
 	posStore := w.GetStore(ecs.NewComponentID("position")).(*ecs.ComponentStore[ecs.Position])
 	lodStore, _ := w.GetStore(LODID).(*ecs.ComponentStore[LOD])
 	appStore, _ := w.GetStore(AppearanceID).(*ecs.ComponentStore[Appearance])
+	aiStore, _ := w.GetStore(AIStateID).(*ecs.ComponentStore[AIState])
+	jobStore, _ := w.GetStore(JobID).(*ecs.ComponentStore[Job])
 	if lodStore == nil || appStore == nil {
 		return nil
 	}
@@ -511,13 +625,25 @@ func (s *NPCRenderSystem) Update(w *ecs.World, dt float64) error {
 		if !ok {
 			continue
 		}
-		s.renderInfos = append(s.renderInfos, NPCRenderInfo{
+		info := NPCRenderInfo{
 			Entity: e,
 			Symbol: app.Symbol,
 			Color:  app.Color,
 			WorldX: int(pos.X),
 			WorldY: int(pos.Y),
-		})
+		}
+		if aiStore != nil {
+			if ai, ok := aiStore.Get(e); ok {
+				info.LastReward = ai.LastReward
+				info.RewardTick = ai.RewardTick
+			}
+		}
+		if jobStore != nil {
+			if job, ok := jobStore.Get(e); ok {
+				info.JobRole = job.Role
+			}
+		}
+		s.renderInfos = append(s.renderInfos, info)
 	}
 	return nil
 }
@@ -525,4 +651,52 @@ func (s *NPCRenderSystem) Update(w *ecs.World, dt float64) error {
 // RenderInfos returns the render information gathered in the last Update.
 func (s *NPCRenderSystem) RenderInfos() []NPCRenderInfo {
 	return s.renderInfos
+}
+
+// RenderInfosForSettlement returns NPCs whose HomeReference matches the given settlement.
+// Queries ECS directly, bypassing LOD filter so ALL settlement NPCs are visible in interior view.
+func (s *NPCRenderSystem) RenderInfosForSettlement(w *ecs.World, settlementEntity ecs.Entity) []NPCRenderInfo {
+	var result []NPCRenderInfo
+	posStore := w.GetStore(ecs.NewComponentID("position")).(*ecs.ComponentStore[ecs.Position])
+	appStore, _ := w.GetStore(AppearanceID).(*ecs.ComponentStore[Appearance])
+	homeRefID := ecs.NewComponentID("home_reference")
+	homeStore, ok := w.GetStore(homeRefID).(*ecs.ComponentStore[settlement.HomeReference])
+	aiStore, _ := w.GetStore(AIStateID).(*ecs.ComponentStore[AIState])
+	jobStore, _ := w.GetStore(JobID).(*ecs.ComponentStore[Job])
+	if !ok || appStore == nil || posStore == nil {
+		return result
+	}
+	for e, hr := range homeStore.All() {
+		if hr.SettlementEntity != settlementEntity {
+			continue
+		}
+		pos, ok := posStore.Get(e)
+		if !ok {
+			continue
+		}
+		app, ok := appStore.Get(e)
+		if !ok {
+			continue
+		}
+		info := NPCRenderInfo{
+			Entity: e,
+			Symbol: app.Symbol,
+			Color:  app.Color,
+			WorldX: int(pos.X),
+			WorldY: int(pos.Y),
+		}
+		if aiStore != nil {
+			if ai, ok := aiStore.Get(e); ok {
+				info.LastReward = ai.LastReward
+				info.RewardTick = ai.RewardTick
+			}
+		}
+		if jobStore != nil {
+			if job, ok := jobStore.Get(e); ok {
+				info.JobRole = job.Role
+			}
+		}
+		result = append(result, info)
+	}
+	return result
 }

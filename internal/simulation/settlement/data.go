@@ -118,6 +118,12 @@ func LoadBuildingTypes(registry *data.Registry) ([]BuildingDef, error) {
 		if v, ok := m["role"].(string); ok {
 			d.Role = v
 		}
+		if v, ok := m["interior_symbol"].(string); ok {
+			d.InteriorSymbol = v
+		}
+		if v, ok := m["color"].(string); ok {
+			d.Color = v
+		}
 		if v, ok := toInt(m["max_workers"]); ok {
 			d.MaxWorkers = v
 		}

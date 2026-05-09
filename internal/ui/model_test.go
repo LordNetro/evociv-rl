@@ -317,15 +317,267 @@ func TestInspectorOpenOnSettlement(t *testing.T) {
 	m.cursorX = 2
 	m.cursorY = 2
 	m.settlementOverlay = []settlement.SettlementRenderInfo{
-		{Entity: 42, WorldX: 2, WorldY: 2, Symbol: '♦'},
+		{Entity: 42, WorldX: 2, WorldY: 2, Symbol: '♦', Name: "Aldea"},
+	}
+
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	mm := newModel.(Model)
+	if mm.screen != "settlement" {
+		t.Errorf("screen = %q, want settlement", mm.screen)
+	}
+	if mm.settlementViewState == nil || mm.settlementViewState.SettlementEntity != ecs.Entity(42) {
+		t.Errorf("expected settlement view for entity 42")
+	}
+}
+
+func TestEnterSettlementViewFromMap(t *testing.T) {
+	wm := world.NewWorldMap(10, 10)
+	m := NewModel()
+	m.SetWorldMap(wm)
+	m.screen = "map"
+	m.cameraX = 0
+	m.cameraY = 0
+	m.cursorX = 3
+	m.cursorY = 3
+	m.settlementOverlay = []settlement.SettlementRenderInfo{
+		{Entity: 7, WorldX: 3, WorldY: 3, Symbol: '♦', Name: "Aldea"},
+	}
+
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	mm := newModel.(Model)
+	if mm.screen != "settlement" {
+		t.Errorf("screen = %q, want settlement", mm.screen)
+	}
+	if mm.settlementViewState == nil {
+		t.Fatal("expected settlementViewState to be set")
+	}
+	if mm.settlementViewState.SettlementEntity != ecs.Entity(7) {
+		t.Errorf("SettlementEntity = %d, want 7", mm.settlementViewState.SettlementEntity)
+	}
+}
+
+func TestEnterSettlementNoOpOnEmptyTile(t *testing.T) {
+	wm := world.NewWorldMap(10, 10)
+	m := NewModel()
+	m.SetWorldMap(wm)
+	m.screen = "map"
+	m.cameraX = 0
+	m.cameraY = 0
+	m.cursorX = 1
+	m.cursorY = 1
+	// No settlement at (1,1)
+
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	mm := newModel.(Model)
+	if mm.screen != "map" {
+		t.Errorf("screen = %q, want map", mm.screen)
+	}
+}
+
+func TestNPCInspectorPriorityOverSettlement(t *testing.T) {
+	wm := world.NewWorldMap(10, 10)
+	m := NewModel()
+	m.SetWorldMap(wm)
+	m.screen = "map"
+	m.cameraX = 0
+	m.cameraY = 0
+	m.cursorX = 2
+	m.cursorY = 2
+	m.npcOverlay = []npc.NPCRenderInfo{
+		{Entity: ecs.Entity(5), WorldX: 2, WorldY: 2, Symbol: '@'},
+	}
+	m.settlementOverlay = []settlement.SettlementRenderInfo{
+		{Entity: 7, WorldX: 2, WorldY: 2, Symbol: '♦'},
 	}
 
 	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
 	mm := newModel.(Model)
 	if !mm.inspectorOpen {
-		t.Error("expected inspector to open on settlement tile")
+		t.Error("expected inspector to open")
 	}
-	if mm.selectedSettlement != 42 {
-		t.Errorf("selectedSettlement = %d, want 42", mm.selectedSettlement)
+	if mm.selectedNPC != ecs.Entity(5) {
+		t.Errorf("selectedNPC = %d, want 5 (NPC priority)", mm.selectedNPC)
+	}
+	if mm.screen != "map" {
+		t.Errorf("screen = %q, want map (inspector, not settlement view)", mm.screen)
+	}
+}
+
+func TestExitSettlementViewWithQ(t *testing.T) {
+	m := NewModel()
+	m.screen = "settlement"
+	m.settlementViewState = &SettlementViewState{SettlementEntity: ecs.Entity(7)}
+	m.previousScreen = "map"
+
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	mm := newModel.(Model)
+	if mm.screen != "map" {
+		t.Errorf("screen = %q, want map", mm.screen)
+	}
+	if mm.settlementViewState != nil {
+		t.Error("expected settlementViewState to be cleared")
+	}
+}
+
+func TestExitSettlementViewWithEsc(t *testing.T) {
+	m := NewModel()
+	m.screen = "settlement"
+	m.settlementViewState = &SettlementViewState{SettlementEntity: ecs.Entity(7)}
+	m.previousScreen = "map"
+
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	mm := newModel.(Model)
+	if mm.screen != "map" {
+		t.Errorf("screen = %q, want map", mm.screen)
+	}
+	if mm.settlementViewState != nil {
+		t.Error("expected settlementViewState to be cleared")
+	}
+}
+
+func TestSettlementCursorNavigation(t *testing.T) {
+	m := NewModel()
+	m.screen = "settlement"
+	m.settlementViewState = &SettlementViewState{ViewportRadius: 3}
+	m.width = 80
+	m.height = 24
+
+	// Right
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	mm := newModel.(Model)
+	if mm.settlementViewState.CursorX != 1 {
+		t.Errorf("cursorX = %d, want 1", mm.settlementViewState.CursorX)
+	}
+
+	// Down
+	newModel, _ = mm.Update(tea.KeyMsg{Type: tea.KeyDown})
+	mm = newModel.(Model)
+	if mm.settlementViewState.CursorY != 1 {
+		t.Errorf("cursorY = %d, want 1", mm.settlementViewState.CursorY)
+	}
+
+	// Left
+	newModel, _ = mm.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	mm = newModel.(Model)
+	if mm.settlementViewState.CursorX != 0 {
+		t.Errorf("cursorX = %d, want 0", mm.settlementViewState.CursorX)
+	}
+
+	// Up
+	newModel, _ = mm.Update(tea.KeyMsg{Type: tea.KeyUp})
+	mm = newModel.(Model)
+	if mm.settlementViewState.CursorY != 0 {
+		t.Errorf("cursorY = %d, want 0", mm.settlementViewState.CursorY)
+	}
+}
+
+func TestSettlementCursorClamp(t *testing.T) {
+	m := NewModel()
+	m.screen = "settlement"
+	m.settlementViewState = &SettlementViewState{ViewportRadius: 3, CursorX: 6, CursorY: 3}
+	m.width = 80
+	m.height = 24
+
+	// Try to move right past edge (viewport width = 7, max cursor = 6)
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	mm := newModel.(Model)
+	if mm.settlementViewState.CursorX != 6 {
+		t.Errorf("cursorX = %d, want 6 (clamped)", mm.settlementViewState.CursorX)
+	}
+
+	// Try to move down past edge (viewport height = 7, max cursor = 6)
+	mm.settlementViewState.CursorY = 6
+	newModel, _ = mm.Update(tea.KeyMsg{Type: tea.KeyDown})
+	mm = newModel.(Model)
+	if mm.settlementViewState.CursorY != 6 {
+		t.Errorf("cursorY = %d, want 6 (clamped)", mm.settlementViewState.CursorY)
+	}
+}
+
+func TestProcessRewardPopupsCreatesAndExpires(t *testing.T) {
+	m := NewModel()
+	m.screen = "settlement"
+	m.simTick = 10
+	m.settlementNPCs = []npc.NPCRenderInfo{
+		{Entity: ecs.Entity(1), WorldX: 1, WorldY: 2, LastReward: 0.87, RewardTick: 10},
+	}
+
+	m.processRewardPopups()
+	if len(m.rewardPopups) != 1 {
+		t.Fatalf("expected 1 popup, got %d", len(m.rewardPopups))
+	}
+	if m.rewardPopups[0].Text != "+0.87" {
+		t.Errorf("popup text = %q, want +0.87", m.rewardPopups[0].Text)
+	}
+
+	// Decrement 5 times to expire (advance simTick so reward becomes stale)
+	for i := 0; i < 5; i++ {
+		m.simTick++
+		m.processRewardPopups()
+	}
+	if len(m.rewardPopups) != 0 {
+		t.Errorf("expected 0 popups after expiry, got %d", len(m.rewardPopups))
+	}
+}
+
+func TestProcessRewardPopupsMaxThree(t *testing.T) {
+	m := NewModel()
+	m.screen = "settlement"
+	m.simTick = 10
+	m.settlementNPCs = []npc.NPCRenderInfo{
+		{Entity: ecs.Entity(1), WorldX: 1, WorldY: 1, LastReward: 0.9, RewardTick: 10},
+		{Entity: ecs.Entity(2), WorldX: 2, WorldY: 2, LastReward: 0.8, RewardTick: 10},
+		{Entity: ecs.Entity(3), WorldX: 3, WorldY: 3, LastReward: 0.7, RewardTick: 10},
+		{Entity: ecs.Entity(4), WorldX: 4, WorldY: 4, LastReward: 0.6, RewardTick: 10},
+		{Entity: ecs.Entity(5), WorldX: 5, WorldY: 5, LastReward: 0.5, RewardTick: 10},
+	}
+
+	m.processRewardPopups()
+	if len(m.rewardPopups) > 3 {
+		t.Errorf("expected at most 3 popups, got %d", len(m.rewardPopups))
+	}
+}
+
+func TestProcessRewardPopupsThreshold(t *testing.T) {
+	m := NewModel()
+	m.screen = "settlement"
+	m.simTick = 10
+	m.settlementNPCs = []npc.NPCRenderInfo{
+		{Entity: ecs.Entity(1), WorldX: 1, WorldY: 1, LastReward: 0.05, RewardTick: 10},
+	}
+
+	m.processRewardPopups()
+	if len(m.rewardPopups) != 0 {
+		t.Errorf("expected 0 popups below threshold, got %d", len(m.rewardPopups))
+	}
+}
+
+func TestProcessRewardPopupsStaleFiltered(t *testing.T) {
+	m := NewModel()
+	m.screen = "settlement"
+	m.simTick = 20
+	m.settlementNPCs = []npc.NPCRenderInfo{
+		{Entity: ecs.Entity(1), WorldX: 1, WorldY: 1, LastReward: 0.87, RewardTick: 10},
+	}
+
+	m.processRewardPopups()
+	if len(m.rewardPopups) != 0 {
+		t.Errorf("expected 0 popups for stale reward, got %d", len(m.rewardPopups))
+	}
+}
+
+func TestCloseInspectorStaysInSettlement(t *testing.T) {
+	m := NewModel()
+	m.screen = "settlement"
+	m.inspectorOpen = true
+	m.settlementViewState = &SettlementViewState{}
+
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	mm := newModel.(Model)
+	if mm.inspectorOpen {
+		t.Error("expected inspector to close")
+	}
+	if mm.screen != "settlement" {
+		t.Errorf("screen = %q, want settlement", mm.screen)
 	}
 }

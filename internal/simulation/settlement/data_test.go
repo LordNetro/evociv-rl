@@ -412,3 +412,101 @@ func TestLoadGrowthThresholdsMissing(t *testing.T) {
 		t.Errorf("expected empty thresholds, got %d", len(thresholds))
 	}
 }
+
+func TestLoadBuildingTypesInteriorFields(t *testing.T) {
+	fsys := fstest.MapFS{
+		"data/buildings.yaml": &fstest.MapFile{
+			Data: []byte(`kind: building-types
+data:
+  - id: house
+    name: Casa
+    interior_symbol: "⌂"
+    color: "#8B4513"
+  - id: farm
+    name: Granja
+    role: farmer
+    interior_symbol: "╬"
+    color: "#DEB887"
+    produces:
+      food: 2.0
+    max_workers: 3
+  - id: tavern
+    name: Taberna
+`),
+		},
+	}
+
+	loader := data.NewLoader(fsys)
+	registry := data.NewRegistry()
+	if err := loader.LoadAll("data", registry); err != nil {
+		t.Fatalf("load data: %v", err)
+	}
+
+	defs, err := LoadBuildingTypes(registry)
+	if err != nil {
+		t.Fatalf("LoadBuildingTypes error: %v", err)
+	}
+	if len(defs) != 3 {
+		t.Fatalf("expected 3 building types, got %d", len(defs))
+	}
+
+	house := defs[0]
+	if house.InteriorSymbol != "⌂" {
+		t.Errorf("house interior_symbol = %q, want ⌂", house.InteriorSymbol)
+	}
+	if house.Color != "#8B4513" {
+		t.Errorf("house color = %q, want #8B4513", house.Color)
+	}
+
+	farm := defs[1]
+	if farm.InteriorSymbol != "╬" {
+		t.Errorf("farm interior_symbol = %q, want ╬", farm.InteriorSymbol)
+	}
+	if farm.Color != "#DEB887" {
+		t.Errorf("farm color = %q, want #DEB887", farm.Color)
+	}
+
+	tavern := defs[2]
+	if tavern.InteriorSymbol != "" {
+		t.Errorf("tavern interior_symbol = %q, want empty", tavern.InteriorSymbol)
+	}
+	if tavern.Color != "" {
+		t.Errorf("tavern color = %q, want empty", tavern.Color)
+	}
+}
+
+func TestLoadBuildingTypesInteriorFieldsBackwardCompat(t *testing.T) {
+	fsys := fstest.MapFS{
+		"data/buildings.yaml": &fstest.MapFile{
+			Data: []byte(`kind: building-types
+data:
+  - id: house
+    name: Casa
+  - id: farm
+    name: Granja
+    role: farmer
+`),
+		},
+	}
+
+	loader := data.NewLoader(fsys)
+	registry := data.NewRegistry()
+	if err := loader.LoadAll("data", registry); err != nil {
+		t.Fatalf("load data: %v", err)
+	}
+
+	defs, err := LoadBuildingTypes(registry)
+	if err != nil {
+		t.Fatalf("LoadBuildingTypes error: %v", err)
+	}
+	if len(defs) != 2 {
+		t.Fatalf("expected 2 building types, got %d", len(defs))
+	}
+
+	if defs[0].InteriorSymbol != "" || defs[0].Color != "" {
+		t.Error("expected zero values for missing interior fields")
+	}
+	if defs[1].InteriorSymbol != "" || defs[1].Color != "" {
+		t.Error("expected zero values for missing interior fields")
+	}
+}
