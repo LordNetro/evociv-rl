@@ -21,7 +21,7 @@ type Model struct {
 	width    int
 	height   int
 	quitting bool
-	screen   string // "welcome" | "map"
+	screen   string // "welcome" | "map" | "settlement"
 	cameraX  int
 	cameraY  int
 	cursorX  int // cursor position within viewport
@@ -35,6 +35,9 @@ type Model struct {
 	selectedSettlement ecs.Entity
 	simTick           int
 	renderTick        int
+	// Settlement view state
+	settlementCameraX int
+	settlementCameraY int
 	// Tilemap renderer fields (optional - nil when feature flag disabled)
 	tilemapView *tilemap.TilemapView
 }
@@ -98,6 +101,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.inspectorOpen = false
 				return m, nil
 			}
+			if m.screen == "settlement" {
+				m.screen = "map"
+				return m, nil
+			}
 			m.quitting = true
 			return m, tea.Quit
 		case "esc":
@@ -105,32 +112,55 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.inspectorOpen = false
 				return m, nil
 			}
+			if m.screen == "settlement" {
+				m.screen = "map"
+				return m, nil
+			}
+		case "enter":
+			if m.screen == "map" && !m.inspectorOpen {
+				// Try to enter settlement at cursor
+				m.tryEnterSettlement()
+			}
 		case "m":
 			if !m.inspectorOpen {
 				if m.screen == "welcome" {
+					m.screen = "map"
+				} else if m.screen == "settlement" {
 					m.screen = "map"
 				} else {
 					m.screen = "welcome"
 				}
 			}
 		case "e":
-			if m.screen == "map" && !m.inspectorOpen {
+			if (m.screen == "map" || m.screen == "settlement") && !m.inspectorOpen {
 				m.tryOpenInspector()
 			}
 		case "up":
-			if m.cursorY > 0 {
+			if m.screen == "settlement" {
+				if m.settlementCameraY > 0 {
+					m.settlementCameraY--
+				}
+			} else if m.cursorY > 0 {
 				m.cursorY--
 			}
 		case "down":
-			if m.cursorY < m.height-1 {
+			if m.screen == "settlement" {
+				m.settlementCameraY++
+			} else if m.cursorY < m.height-1 {
 				m.cursorY++
 			}
 		case "left":
-			if m.cursorX > 0 {
+			if m.screen == "settlement" {
+				if m.settlementCameraX > 0 {
+					m.settlementCameraX--
+				}
+			} else if m.cursorX > 0 {
 				m.cursorX--
 			}
 		case "right":
-			if m.cursorX < m.width-1 {
+			if m.screen == "settlement" {
+				m.settlementCameraX++
+			} else if m.cursorX < m.width-1 {
 				m.cursorX++
 			}
 		case "w":
@@ -210,6 +240,31 @@ func (m *Model) tryOpenInspector() {
 			m.selectedSettlement = ecs.Entity(info.Entity)
 			m.inspectorOpen = true
 			m.selectedNPC = 0
+			return
+		}
+	}
+}
+
+// tryEnterSettlement enters the settlement interior view if cursor is on a settlement
+func (m *Model) tryEnterSettlement() {
+	if m.worldMap == nil {
+		return
+	}
+	wx := m.cursorX + m.cameraX
+	wy := m.cursorY + m.cameraY
+	for _, info := range m.settlementOverlay {
+		if info.WorldX == wx && info.WorldY == wy {
+			// Found settlement under cursor, enter settlement view
+			m.screen = "settlement"
+			// Center the settlement camera on the settlement position
+			m.settlementCameraX = info.WorldX - m.width/2
+			m.settlementCameraY = info.WorldY - m.height/2
+			if m.settlementCameraX < 0 {
+				m.settlementCameraX = 0
+			}
+			if m.settlementCameraY < 0 {
+				m.settlementCameraY = 0
+			}
 			return
 		}
 	}

@@ -70,6 +70,8 @@ func renderView(m Model) string {
 	switch m.screen {
 	case "map":
 		return renderMap(m)
+	case "settlement":
+		return renderSettlementView(m)
 	default:
 		return renderWelcome(m)
 	}
@@ -309,4 +311,123 @@ func initTilemapRenderer(worldMap *world.WorldMap) *tilemap.TilemapView {
 // SetTilemapView sets the tilemap view for the model
 func (m *Model) SetTilemapView(tv *tilemap.TilemapView) {
 	m.tilemapView = tv
+}
+
+// renderSettlementView renders the settlement interior with terrain + buildings + NPCs
+func renderSettlementView(m Model) string {
+	// Show settlement interior with terrain + buildings + NPCs
+	if m.worldMap == nil {
+		return "No world map"
+	}
+
+	termHeight := m.height - 3 // Leave room for header and status bar
+	termWidth := m.width - 2
+
+	var lines []string
+
+	// Header with settlement info
+	header := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#FFD700")).
+		Bold(true).
+		Render(fmt.Sprintf("[%s] Settlement View", m.screen))
+	lines = append(lines, header)
+
+	// Get settlement position for centering
+	setInfo := m.findSettlementAt(m.cursorX+m.cameraX, m.cursorY+m.cameraY)
+
+	// Render the settlement area with terrain + buildings + NPCs
+	for row := 0; row < termHeight; row++ {
+		worldY := m.settlementCameraY + row
+		if worldY >= m.worldMap.Height {
+			lines = append(lines, strings.Repeat(" ", termWidth))
+			continue
+		}
+
+		var line strings.Builder
+		for col := 0; col < termWidth; col++ {
+			worldX := m.settlementCameraX + col
+			if worldX >= m.worldMap.Width {
+				line.WriteString(" ")
+				continue
+			}
+
+			// Check for NPC at this position (within settlement radius)
+			dx := worldX - setInfo.WorldX
+			dy := worldY - setInfo.WorldY
+			showChar := "" // empty means show terrain
+			charColor := ""
+
+			if dx*dx+dy*dy <= 25 { // radius 5 squared
+				for _, npcInfo := range m.npcOverlay {
+					if npcInfo.WorldX == worldX && npcInfo.WorldY == worldY {
+						showChar = "@"
+						charColor = string(npcInfo.Color)
+						break
+					}
+				}
+			}
+
+			// Check for settlement center
+			if showChar == "" && worldX == setInfo.WorldX && worldY == setInfo.WorldY {
+				showChar = string(setInfo.Symbol)
+				charColor = setInfo.Color
+			}
+
+			// Check for other settlements
+			if showChar == "" {
+				for _, sinfo := range m.settlementOverlay {
+					if sinfo.WorldX == worldX && sinfo.WorldY == worldY {
+						showChar = string(sinfo.Symbol)
+						charColor = sinfo.Color
+						break
+					}
+				}
+			}
+
+			// If we have a char to show, render it
+			if showChar != "" {
+				if charColor == "" {
+					charColor = "#888888"
+				}
+				line.WriteString(lipgloss.NewStyle().
+					Foreground(lipgloss.Color(charColor)).
+					Bold(true).
+					Render(showChar))
+				continue
+			}
+
+			// Show terrain
+			tile := m.worldMap.TileAt(worldX, worldY)
+			if tile != nil {
+				style := biomeStyles["unknown"]
+				if s, ok := biomeStyles[tile.BiomeID]; ok {
+					style = s
+				}
+				line.WriteString(lipgloss.NewStyle().
+					Foreground(lipgloss.Color(style.color)).
+					Render(style.symbol))
+			} else {
+				line.WriteString(" ")
+			}
+		}
+		lines = append(lines, line.String())
+	}
+
+	// Footer with controls
+	footer := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#888888")).
+		Render(fmt.Sprintf("[m] Map  [esc/q] Back  | %s | Pop: %d", setInfo.Name, setInfo.Population))
+	lines = append(lines, footer)
+
+	return lipgloss.JoinVertical(lipgloss.Top, lines...)
+}
+
+// findSettlementAt finds the settlement at the given world coordinates
+func (m Model) findSettlementAt(wx, wy int) settlement.SettlementRenderInfo {
+	for _, info := range m.settlementOverlay {
+		if info.WorldX == wx && info.WorldY == wy {
+			return info
+		}
+	}
+	return settlement.SettlementRenderInfo{Name: "Unknown", Color: "#888888"}
 }
