@@ -8,6 +8,7 @@ import (
 
 	"github.com/marco/evociv-rl/internal/ecs"
 	"github.com/marco/evociv-rl/internal/simulation/npc"
+	"github.com/marco/evociv-rl/internal/simulation/df"
 	"github.com/marco/evociv-rl/internal/simulation/rl"
 	"github.com/marco/evociv-rl/internal/simulation/settlement"
 )
@@ -247,6 +248,30 @@ func renderBuildingInspector(m Model) string {
 				name = nameComp.Name
 			}
 			b.WriteString(fmt.Sprintf("%s (reward: %.2f)\n", name, n.LastReward))
+		}
+	}
+
+	// Available jobs
+	b.WriteString("--- Available Jobs (press 'j' to enqueue first) ---\n")
+	for _, job := range df.AllJobs() {
+		b.WriteString(fmt.Sprintf("%s: role=%s action=%s reward=%.2f\n", job.ID, job.Role, job.ActionID, job.Reward))
+	}
+
+	// Inventory
+	if m.ecsWorld != nil {
+		if invStore := m.ecsWorld.GetStore(df.InventoryID); invStore != nil {
+			if s, ok := invStore.(*ecs.ComponentStore[df.Inventory]); ok {
+				if inv, ok := s.Get(ecs.Entity(m.selectedBuilding)); ok {
+					b.WriteString("--- Inventory (press 'k' to add wood) ---\n")
+					if len(inv.Items) == 0 {
+						b.WriteString("(empty)\n")
+					} else {
+						for it, c := range inv.Items {
+							b.WriteString(fmt.Sprintf("%s x%d\n", it, c))
+						}
+					}
+				}
+			}
 		}
 	}
 

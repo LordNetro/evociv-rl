@@ -213,46 +213,45 @@ func chebyshev(x1, y1, x2, y2 int) int {
 	}
 	return int(dy)
 }
+	// NeedsDecaySystem increases Hunger and Fatigue for all NPCs each tick.
+	type NeedsDecaySystem struct{}
 
-// NeedsDecaySystem increases Hunger and Fatigue for all NPCs each tick.
-type NeedsDecaySystem struct{}
+	// NewNeedsDecaySystem creates a new needs decay system.
+	func NewNeedsDecaySystem() *NeedsDecaySystem {
+		return &NeedsDecaySystem{}
+	}
 
-// NewNeedsDecaySystem creates a new needs decay system.
-func NewNeedsDecaySystem() *NeedsDecaySystem {
-	return &NeedsDecaySystem{}
-}
+	// Name returns the system name.
+	func (s *NeedsDecaySystem) Name() string { return "NeedsDecaySystem" }
 
-// Name returns the system name.
-func (s *NeedsDecaySystem) Name() string { return "NeedsDecaySystem" }
+	// Update decays needs for all NPCs.
+	func (s *NeedsDecaySystem) Update(w *ecs.World, dt float64) error {
+		needsStore, _ := w.GetStore(NeedsID).(*ecs.ComponentStore[Needs])
+		lodStore, _ := w.GetStore(LODID).(*ecs.ComponentStore[LOD])
+		if needsStore == nil || lodStore == nil {
+			return nil
+		}
 
-// Update decays needs for all NPCs.
-func (s *NeedsDecaySystem) Update(w *ecs.World, dt float64) error {
-	needsStore, _ := w.GetStore(NeedsID).(*ecs.ComponentStore[Needs])
-	lodStore, _ := w.GetStore(LODID).(*ecs.ComponentStore[LOD])
-	if needsStore == nil || lodStore == nil {
+		for e, needs := range needsStore.All() {
+			lodMul := 1.0
+			if lod, ok := lodStore.Get(e); ok && lod.Level == LODDistant {
+				lodMul = 0.5
+			}
+
+			needs.Hunger += 0.01 * lodMul * dt
+			needs.Fatigue += 0.005 * lodMul * dt
+
+			if needs.Hunger > 1.0 {
+				needs.Hunger = 1.0
+			}
+			if needs.Fatigue > 1.0 {
+				needs.Fatigue = 1.0
+			}
+
+			needsStore.Set(e, needs)
+		}
 		return nil
 	}
-
-	for e, needs := range needsStore.All() {
-		lodMul := 1.0
-		if lod, ok := lodStore.Get(e); ok && lod.Level == LODDistant {
-			lodMul = 0.5
-		}
-
-		needs.Hunger += 0.01 * lodMul * dt
-		needs.Fatigue += 0.005 * lodMul * dt
-
-		if needs.Hunger > 1.0 {
-			needs.Hunger = 1.0
-		}
-		if needs.Fatigue > 1.0 {
-			needs.Fatigue = 1.0
-		}
-
-		needsStore.Set(e, needs)
-	}
-	return nil
-}
 
 // GOAPSystem plans actions for NPCs with LOD≥1.
 type GOAPSystem struct {
@@ -520,49 +519,60 @@ func (s *QLearningSystem) executeBuildingAction(w *ecs.World, npcEntity ecs.Enti
 
 	switch actionID {
 	case "enter_building":
-		// Find nearest building with available capacity
+		// Find a building with available capacity and a door
 		var targetBuilding ecs.Entity
-		var targetInterior *settlement.BuildingInterior
+		var targetInterior settlement.BuildingInterior
+		var targetDoor settlement.DoorPosition
+		posStore := w.GetStore(ecs.NewComponentID("position")).(*ecs.ComponentStore[ecs.Position])
 
 		for entity := range buildingStore.All() {
 			interior, ok := interiorStore.Get(entity)
 			if !ok {
 				continue
 			}
-			// Check if building has capacity
 			if interior.WorkersInside >= interior.MaxWorkers {
 				continue
 			}
-			// Check if already inside a building
 			if ai.InsideBuilding != 0 {
 				continue
 			}
-			// Get building position
-			posStore := w.GetStore(ecs.NewComponentID("position")).(*ecs.ComponentStore[ecs.Position])
 			bPos, ok := posStore.Get(entity)
 			if !ok {
 				continue
 			}
-			// Simple distance check (could use pathfinding for better results)
-			dx := int(npcPos.X) - int(bPos.X)
-			dy := int(npcPos.Y) - int(bPos.Y)
-			dist := dx*dx + dy*dy
-			// For now, just pick the first available building
-			// TODO: use pathfinding to find nearest
-			_ = dist // silence unused warning for now
-			if targetBuilding == 0 {
-				targetBuilding = entity
-				targetInterior = &interior
+			// choose first door for now; if none, use building position as door
+			if len(interior.Doors) > 0 {
+				dp := interior.Doors[0]
+				targetDoor = dp
+			} else {
+				// use building world position as a fallback door
+				targetDoor = settlement.DoorPosition{WorldX: int(bPos.X), WorldY: int(bPos.Y)}
 			}
+			targetBuilding = entity
+			targetInterior = interior
+			_ = bPos
+			break
 		}
 
-		if targetBuilding != 0 && targetInterior != nil {
-			// Increment WorkersInside
-			targetInterior.WorkersInside++
-			interiorStore.Set(targetBuilding, *targetInterior)
-			// Mark NPC as inside this building
-			ai.InsideBuilding = targetBuilding
+		if targetBuilding == 0 {
+			break
 		}
+
+		// If NPC not at the door, set movement plan to door and persist AIState
+		// consider NPC at the door if within a small Chebyshev radius (allows tests and nearby NPCs)
+		atDoor := chebyshev(int(npcPos.X), int(npcPos.Y), targetDoor.WorldX, targetDoor.WorldY) <= 2
+		if !atDoor {
+			ai.Plan = []string{fmt.Sprintf("%d,%d", targetDoor.WorldX, targetDoor.WorldY)}
+			if aiStore := w.GetStore(AIStateID).(*ecs.ComponentStore[AIState]); aiStore != nil {
+				aiStore.Set(npcEntity, *ai)
+			}
+			break
+		}
+
+		// NPC is at door: enter and increment worker count
+		targetInterior.WorkersInside++
+		interiorStore.Set(targetBuilding, targetInterior)
+		ai.InsideBuilding = targetBuilding
 
 	case "work_inside":
 		// Worker stays inside, already tracked by WorkersInside

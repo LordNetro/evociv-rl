@@ -12,6 +12,7 @@ import (
 
 	"github.com/marco/evociv-rl/internal/data"
 	"github.com/marco/evociv-rl/internal/ecs"
+	"github.com/marco/evociv-rl/internal/simulation/df"
 	"github.com/marco/evociv-rl/internal/simulation/economy"
 	"github.com/marco/evociv-rl/internal/simulation/npc"
 	"github.com/marco/evociv-rl/internal/simulation/settlement"
@@ -108,6 +109,13 @@ func run() error {
 
 	// Initialize ECS world
 	ecsWorld := ecs.NewWorld()
+
+	// Register df stores
+	// load DF job defs from data and register stores
+	if err := df.LoadJobsFromRegistry(registry); err != nil {
+		log.Warn("Failed to load DF job defs", "error", err)
+	}
+	df.RegisterStores(ecsWorld)
 	npc.RegisterStores(ecsWorld)
 	settlement.RegisterSettlementStores(ecsWorld)
 
@@ -130,15 +138,18 @@ func run() error {
 	// Spawn NPCs and run systems once before TUI starts
 	var npcRenderSys *npc.NPCRenderSystem
 	var setRenderSys *settlement.SettlementRenderSystem
+	var buildingRenderSys *settlement.BuildingRenderSystem
 	var qlSys *npc.QLearningSystem
 	if worldMap != nil {
 		setRenderSys = settlement.NewSettlementRenderSystem()
+		buildingRenderSys = settlement.NewBuildingRenderSystem(buildingDefs)
 		ecsWorld.AddSystem(settlement.NewSettlementSpawnSystem(worldMap, genConfig.Seed, settlementDefs, buildingDefs))
 		ecsWorld.AddSystem(settlement.NewPopulationSystem())
 		ecsWorld.AddSystem(economy.NewSettlementEconomySystem(buildingDefs))
 		ecsWorld.AddSystem(economy.NewSettlementGrowthSystem(growthThresholds))
 		ecsWorld.AddSystem(economy.NewFamineSystem())
 		ecsWorld.AddSystem(setRenderSys)
+		ecsWorld.AddSystem(buildingRenderSys)
 	}
 	if worldMap != nil && len(raceDefs) > 0 && len(roleDefs) > 0 {
 		npcRenderSys = npc.NewNPCRenderSystem()
@@ -152,6 +163,10 @@ func run() error {
 			qlSys = npc.NewQLearningSystem(worldMap, actionDefs, rand.New(rand.NewSource(time.Now().UnixNano())))
 			ecsWorld.AddSystem(qlSys)
 		}
+		// DF job systems: assignment, integration and completion
+		ecsWorld.AddSystem(df.NewJobSystem())
+		ecsWorld.AddSystem(df.NewDFAssignmentIntegrationSystem())
+		ecsWorld.AddSystem(df.NewJobCompletionSystem())
 		ecsWorld.AddSystem(npcRenderSys)
 	}
 
@@ -177,6 +192,11 @@ func run() error {
 			log.Warn("Settlement render update failed", "error", err)
 		}
 	}
+	if buildingRenderSys != nil {
+		if err := buildingRenderSys.Update(ecsWorld, 0); err != nil {
+			log.Warn("Building render update failed", "error", err)
+		}
+	}
 
 	// Start TUI
 	model := ui.NewModel()
@@ -191,6 +211,9 @@ func run() error {
 	}
 	if setRenderSys != nil {
 		model.SetSettlementOverlay(setRenderSys.RenderInfos())
+	}
+	if buildingRenderSys != nil {
+		model.SetSettlementBuildings(buildingRenderSys.RenderInfos())
 	}
 
 	// Load Q-table from store if available

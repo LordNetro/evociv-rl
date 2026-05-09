@@ -8,6 +8,7 @@ import (
 
 	"github.com/marco/evociv-rl/internal/ecs"
 	"github.com/marco/evociv-rl/internal/simulation/npc"
+	"github.com/marco/evociv-rl/internal/simulation/df"
 	"github.com/marco/evociv-rl/internal/simulation/settlement"
 	"github.com/marco/evociv-rl/internal/world"
 )
@@ -201,6 +202,67 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "d":
 			if m.screen == "map" && m.worldMap != nil && m.cameraX < m.worldMap.Width-1 {
 				m.cameraX++
+			}
+		}
+
+		// Enqueue a job onto selected building's JobQueue
+		if msg.String() == "j" {
+			if m.screen == "settlement" && m.inspectorOpen && m.selectedBuilding != 0 && m.ecsWorld != nil {
+				// select job whose role matches building role
+				var chosen df.Job
+				var found bool
+				var role string
+				for _, bi := range m.settlementBuildings {
+					if int(bi.Entity) == m.selectedBuilding {
+						role = bi.Role
+						break
+					}
+				}
+				for _, j := range df.AllJobs() {
+					if role != "" && j.Role == role {
+						chosen = j
+						found = true
+						break
+					}
+				}
+				if !found {
+					jobs := df.AllJobs()
+					if len(jobs) > 0 {
+						chosen = jobs[0]
+						found = true
+					}
+				}
+				if found {
+					// attach/append to JobQueue component of building
+					be := ecs.Entity(m.selectedBuilding)
+					jqStore, ok := m.ecsWorld.GetStore(df.JobQueueID).(*ecs.ComponentStore[df.JobQueue])
+					if ok {
+						q, qok := jqStore.Get(ecs.Entity(be))
+						if !qok {
+							q = df.JobQueue{}
+						}
+						// if job has no target entity, set to this building
+						chosen.TargetEntity = int64(be)
+						q.Jobs = append(q.Jobs, df.Job(chosen))
+						jqStore.Set(ecs.Entity(be), q)
+					}
+				}
+			}
+
+			// Add wood to selected building inventory
+			if msg.String() == "k" {
+				if m.screen == "settlement" && m.inspectorOpen && m.selectedBuilding != 0 && m.ecsWorld != nil {
+					be := ecs.Entity(m.selectedBuilding)
+					invStore, ok := m.ecsWorld.GetStore(df.InventoryID).(*ecs.ComponentStore[df.Inventory])
+					if ok {
+						inv, iok := invStore.Get(be)
+						if !iok {
+							inv = df.Inventory{OwnerEntity: int64(be), Items: map[string]int{}, Cap: 10}
+						}
+						inv.Items["wood"] = inv.Items["wood"] + 1
+						invStore.Set(be, inv)
+					}
+				}
 			}
 		}
 	case tea.WindowSizeMsg:
