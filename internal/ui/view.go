@@ -323,11 +323,20 @@ func renderSettlementView(m Model) string {
 	// Use stored settlement info
 	setInfo := m.settlementViewInfo
 
+	// Get settlement radius from component
+	radius := 5 // default
+	if m.settlementViewEntity != 0 && m.ecsWorld != nil {
+		if comp, ok := ecs.GetComponent[settlement.Settlement](m.ecsWorld, m.settlementViewEntity); ok {
+			radius = comp.Radius
+		}
+	}
+	radiusSq := radius * radius
+
 	// Header with settlement info
 	header := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#FFD700")).
 		Bold(true).
-		Render(fmt.Sprintf("[SETTLEMENT] %s - Radius: %d", setInfo.Name, 5))
+		Render(fmt.Sprintf("[SETTLEMENT] %s - Radius: %d", setInfo.Name, radius))
 	lines := []string{header}
 
 	termHeight := m.height - 4 // Leave room for header and status bar
@@ -351,7 +360,7 @@ func renderSettlementView(m Model) string {
 			bold := false
 
 			// Check for NPC at this position (within settlement radius)
-			if distSq <= 25 { // radius 5 squared
+			if distSq <= radiusSq {
 				for _, npcInfo := range m.npcOverlay {
 					if npcInfo.WorldX == worldX && npcInfo.WorldY == worldY {
 						showChar = "@"
@@ -369,13 +378,14 @@ func renderSettlementView(m Model) string {
 				bold = true
 			}
 
-			// Check for buildings (simplified: show walls around center)
-			if showChar == "" && distSq <= 9 { // within 3 tiles of center
-				// Show building footprint
-				if distSq == 9 || distSq == 4 || distSq == 1 { // corners and edges
+			// Show building edges (walls at the border of settlement radius)
+			if showChar == "" && distSq <= radiusSq {
+				// On the edge of settlement radius
+				if distSq == radiusSq-1 || distSq == radiusSq-2 {
 					showChar = "#"
 					charColor = "#8B7355"
-				} else if distSq <= 8 && distSq > 0 {
+				} else if distSq < radiusSq-2 && distSq > 0 {
+					// Inside settlement, show floor
 					showChar = "."
 					charColor = "#90EE90"
 				}

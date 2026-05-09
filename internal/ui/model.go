@@ -190,7 +190,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cursorX = msg.Width / 2
 		m.cursorY = msg.Height / 2
 	case tickMsg:
-		if m.ecsWorld != nil && m.screen == "map" {
+		if m.ecsWorld != nil && (m.screen == "map" || m.screen == "settlement") {
 			m.simTick++
 			dt := 0.2 // 200ms per tick
 			_ = m.ecsWorld.Update(dt)
